@@ -181,6 +181,7 @@ int main(){
   auto total_time = parse_time + deserialize_time + checksum_time + haversine_time;
 
 
+  printf("\n*** C++ Implementation ***\n");
   printf("\n");
   printf("COORDINATE COUNT: %llu\n", data_length);
   printf("CHECKSUM: %f\n", checksum);

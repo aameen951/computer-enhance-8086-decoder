@@ -10,7 +10,7 @@ if not exist "%BUILD_DIR%" MKDIR "%BUILD_DIR%"
 
 pushd "%BUILD_DIR%"
 
-"%VC64_CL%" /nologo /Zi "%PROJECT_DIR%\gen.cpp"
+"%VC64_CL%" /nologo /Zi /O2 "%PROJECT_DIR%\gen.cpp"
 "%VC64_CL%" /nologo /Zi /O2 "%PROJECT_DIR%\haversine.cpp" "%PROJECT_DIR%\json.cpp"
 
 popd

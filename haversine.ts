@@ -45,6 +45,7 @@ let haversine_time = after_haversine - after_compute_checksum;
 let end_time = after_haversine;
 let total_time = parse_time + checksum_time + haversine_time;
 
+console.log("\n*** JavaScript Implementation ***");
 console.log("\nCOORDINATE COUNT:", count);
 console.log("DISTANCE AVERAGE:", sum / count);
 console.log("CHECKSUM:", checksum, "\n");

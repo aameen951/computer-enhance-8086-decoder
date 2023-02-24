@@ -52,6 +52,7 @@ end_time = after_haversine
 total_time = parse_time + checksum_time + haversine_time
 
 
+print("\n*** Python Implementation ***");
 print("\nCOORDINATE COUNT: " + str(count));
 print("DISTANCE AVERAGE: " + str(sum / count));
 print("CHECKSUM: " + str(checksum) + "\n");
