@@ -1,7 +1,23 @@
+#define DUMP_ALLOCATION_STATS 0
 
 #include "json.h"
+#if DUMP_ALLOCATION_STATS
+#include <stdio.h>
+#endif
 #include <stdlib.h>
 #include <assert.h>
+
+#if DUMP_ALLOCATION_STATS
+um _global_alloc_count;
+um _global_alloc_size;
+#endif
+void *alloc(um size) {
+#if DUMP_ALLOCATION_STATS
+  _global_alloc_count++;
+  _global_alloc_size += size;
+#endif
+  return calloc(1, size);
+}
 
 void _json_free_member(JsonMember *m){
   if(m->name.data) {
@@ -96,7 +112,7 @@ void _json__string(ParseState *s){
   }
 
   um string_len = 0;
-  auto string = (u8 *)malloc(size + 1);
+  auto string = (u8 *)alloc(size + 1);
   if(!string) {
     _json_error(s, JSON_ERROR_INSUFFICIENT_MEMORY);
     return;
@@ -259,7 +275,7 @@ JsonElement *_json_parse_object(ParseState *s){
       break;
     }
 
-    auto m = (JsonMember *)calloc(1, sizeof(JsonMember));
+    auto m = (JsonMember *)alloc(sizeof(JsonMember));
     if(!m) {
       _json_error(s, JSON_ERROR_INSUFFICIENT_MEMORY);
       if(name.data)free(name.data);
@@ -285,7 +301,7 @@ JsonElement *_json_parse_object(ParseState *s){
   if(!error) {
     _json_skip_ws(s);
 
-    auto result = (JsonElement *)calloc(1, sizeof(JsonElement));
+    auto result = (JsonElement *)alloc(sizeof(JsonElement));
     if(result) {
       result->kind = JSON_ELEMENT_OBJECT;
       result->object->first = first;
@@ -340,7 +356,7 @@ JsonElement *_json_parse_array(ParseState *s){
   if(!error) {
     _json_skip_ws(s);
 
-    auto result = (JsonElement *)calloc(1, sizeof(JsonElement));
+    auto result = (JsonElement *)alloc(sizeof(JsonElement));
     if(result) {
       result->kind = JSON_ELEMENT_ARRAY;
       result->array->first = first;
@@ -401,7 +417,7 @@ JsonElement *_json_parse_value(ParseState *s){
     } break;
     case JSON_TOKEN_STRING: {
 
-      result = (JsonElement *)calloc(1, sizeof(JsonElement));
+      result = (JsonElement *)alloc(sizeof(JsonElement));
       if(!result) {
         _json_error(s, JSON_ERROR_INSUFFICIENT_MEMORY);
         return NULL;
@@ -413,7 +429,7 @@ JsonElement *_json_parse_value(ParseState *s){
     } break;
     case JSON_TOKEN_NUMBER: {
 
-      result = (JsonElement *)calloc(1, sizeof(JsonElement));
+      result = (JsonElement *)alloc(sizeof(JsonElement));
       if(!result) {
         _json_error(s, JSON_ERROR_INSUFFICIENT_MEMORY);
         return NULL;
@@ -424,7 +440,7 @@ JsonElement *_json_parse_value(ParseState *s){
 
     } break;
     case JSON_TOKEN_TRUE: {
-      result = (JsonElement *)calloc(1, sizeof(JsonElement));
+      result = (JsonElement *)alloc(sizeof(JsonElement));
       if(!result) {
         _json_error(s, JSON_ERROR_INSUFFICIENT_MEMORY);
         return NULL;
@@ -434,7 +450,7 @@ JsonElement *_json_parse_value(ParseState *s){
       _json_next_token(s);
     } break;
     case JSON_TOKEN_FALSE: {
-      result = (JsonElement *)calloc(1, sizeof(JsonElement));
+      result = (JsonElement *)alloc(sizeof(JsonElement));
       if(!result) {
         _json_error(s, JSON_ERROR_INSUFFICIENT_MEMORY);
         return NULL;
@@ -444,7 +460,7 @@ JsonElement *_json_parse_value(ParseState *s){
       _json_next_token(s);
     } break;
     case JSON_TOKEN_NULL: {
-      result = (JsonElement *)calloc(1, sizeof(JsonElement));
+      result = (JsonElement *)alloc(sizeof(JsonElement));
       if(!result) {
         _json_error(s, JSON_ERROR_INSUFFICIENT_MEMORY);
         return NULL;
@@ -468,6 +484,11 @@ JsonElement *_json_parse_element(ParseState *s){
 }
 
 JsonResult json_parse(um size, u8 *data){
+#if DUMP_ALLOCATION_STATS
+  auto start_alloc_count = _global_alloc_count;
+  auto start_alloc_size = _global_alloc_size;
+#endif
+
   JsonResult result = {};
 
   ParseState s = {};
@@ -483,6 +504,11 @@ JsonResult json_parse(um size, u8 *data){
   }
 
   result.root = el;
+#if DUMP_ALLOCATION_STATS
+  auto end_alloc_count = _global_alloc_count;
+  auto end_alloc_size = _global_alloc_size;
+  printf("Total alloc count: %llu  Total alloc size: %llu\n", end_alloc_count-start_alloc_count, end_alloc_size-start_alloc_size);
+#endif
   return result;
 }
 
