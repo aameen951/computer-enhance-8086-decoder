@@ -2,7 +2,6 @@
 #include "my_std.h"
 #include "file_reader.h"
 
-
 char *decode_REG(u8 W, u8 REG){
   switch(REG) {
     case 0b000: return W ? "AX" : "AL";
@@ -16,7 +15,6 @@ char *decode_REG(u8 W, u8 REG){
   }
   return "<ERR>";
 }
-
 char *decode_SR(u8 SR){
   switch(SR) {
     case 0b00: return "ES";
@@ -26,40 +24,56 @@ char *decode_SR(u8 SR){
   }
   return "<ERR>";
 }
+char *decode_rm_reg_displacement(u8 RM){
+  switch(RM) {
+    case 0b000: return "BX + SI";
+    case 0b001: return "BX + DI";
+    case 0b010: return "BP + SI";
+    case 0b011: return "BP + DI";
+    case 0b100: return "SI";
+    case 0b101: return "DI";
+    case 0b110: return "BP";
+    case 0b111: return "BX";
+  }
+  return "<ERR>";
+}
+
+bool has_remaining(u8 *ptr, u8 *end, um size){
+  return ptr + size <= end;
+}
+u8 read_u8(u8 **ptr_p){
+  u8 result = *(u8 *)*ptr_p;
+  *ptr_p += 1;
+  return result;
+}
+u16 read_u16(u8 **ptr_p){
+  u16 result = *(u16 *)*ptr_p;
+  *ptr_p += 2;
+  return result;
+}
+s8 read_s8(u8 **ptr_p){ return (s8)read_u8(ptr_p); }
+s16 read_s16(u8 **ptr_p){ return (s16)read_u16(ptr_p); }
+
 bool decode_MOD(u8 **ptr_p, u8 *end, u8 W, u8 MOD, u8 RM, char *decoded_mod){
   auto ptr = *ptr_p;
   auto w_str = W ? "WORD" : "BYTE";
 
   if(MOD == 0b00) {
-    switch(RM) {
-      case 0b000: sprintf(decoded_mod, "%s PTR:[BX + SI]", w_str); break;
-      case 0b001: sprintf(decoded_mod, "%s PTR:[BX + DI]", w_str); break;
-      case 0b010: sprintf(decoded_mod, "%s PTR:[BP + SI]", w_str); break;
-      case 0b011: sprintf(decoded_mod, "%s PTR:[BP + DI]", w_str); break;
-      case 0b100: sprintf(decoded_mod, "%s PTR:[SI]", w_str); break;
-      case 0b101: sprintf(decoded_mod, "%s PTR:[DI]", w_str); break;
-      case 0b110: {
-        if(ptr+1 >= end)return false;
-        auto DIRECT_ADDRESS = *(u16 *)ptr;
-        ptr += 2;
-        sprintf(decoded_mod, "%s PTR:[0x%04X]", w_str, DIRECT_ADDRESS); 
-      } break;
-      case 0b111: sprintf(decoded_mod, "%s PTR:[BX]", w_str); break;
+    if(RM == 0b110) {
+      if(!has_remaining(ptr, end, 2))return false;
+      u16 DIRECT_ADDRESS = read_u16(&ptr);
+      sprintf(decoded_mod, "%s [0x%04X]", w_str, DIRECT_ADDRESS); 
+    } else {
+      sprintf(decoded_mod, "%s [%s]", w_str, decode_rm_reg_displacement(RM));
     }
-  } else if(MOD == 0b01 || MOD == 0b10) {
-    if(ptr + MOD - 1 >= end)return false;
-    u16 DISPLACEMENT = MOD == 1 ? *ptr : *(u16 *)ptr;
-    ptr += MOD;
-    switch(RM) {
-      case 0b000: sprintf(decoded_mod, "%s PTR:[BX + SI + 0x%0*X]", w_str, 2*MOD, DISPLACEMENT); break;
-      case 0b001: sprintf(decoded_mod, "%s PTR:[BX + DI + 0x%0*X]", w_str, 2*MOD, DISPLACEMENT); break;
-      case 0b010: sprintf(decoded_mod, "%s PTR:[BP + SI + 0x%0*X]", w_str, 2*MOD, DISPLACEMENT); break;
-      case 0b011: sprintf(decoded_mod, "%s PTR:[BP + DI + 0x%0*X]", w_str, 2*MOD, DISPLACEMENT); break;
-      case 0b100: sprintf(decoded_mod, "%s PTR:[SI + 0x%0*X]", w_str, 2*MOD, DISPLACEMENT); break;
-      case 0b101: sprintf(decoded_mod, "%s PTR:[DI + 0x%0*X]", w_str, 2*MOD, DISPLACEMENT); break;
-      case 0b110: sprintf(decoded_mod, "%s PTR:[BP + 0x%0*X]", w_str, 2*MOD, DISPLACEMENT); break;
-      case 0b111: sprintf(decoded_mod, "%s PTR:[BX + 0x%0*X]", w_str, 2*MOD, DISPLACEMENT); break;
-    }
+  } else if(MOD == 0b01) {
+    if(!has_remaining(ptr, end, 1))return false;
+    auto DISPLACEMENT = read_s8(&ptr);
+    sprintf(decoded_mod, "%s [%s + %d]", w_str, decode_rm_reg_displacement(RM), DISPLACEMENT);
+  } else if(MOD == 0b10) {
+    if(!has_remaining(ptr, end, 2))return false;
+    auto DISPLACEMENT = read_s16(&ptr);
+    sprintf(decoded_mod, "%s [%s + %d]", w_str, decode_rm_reg_displacement(RM), DISPLACEMENT);
   } else if(MOD == 0b11) {
     sprintf(decoded_mod, "%s", decode_REG(W, RM));
   }
@@ -71,149 +85,113 @@ void parse_8086(u8 *data, um size){
   auto ptr = data;
   auto end = ptr + size;
 
-  for(um i=0; i<size; i++) {
-    printf("%02x ", data[i]);
-  }
-  printf("\n\n");
-
   while(ptr < end) {
 
+    // Register/memory to/from register
     if((*ptr & 0b11111100) == 0b10001000) {
       auto D = (*ptr >> 1) & 0b1;
       auto W = (*ptr >> 0) & 0b1;
-      ptr++;
+      read_u8(&ptr);
 
-      if(ptr >= end)return;
+      if(!has_remaining(ptr, end, 1))return;
 
       auto MOD = (*ptr >> 6) & 0b11;
       auto REG = (*ptr >> 3) & 0b111;
       auto RM = (*ptr >> 0) & 0b111;
-      ptr++;
-
-      char *dest = "";
-      char *src = "";
+      read_u8(&ptr);
 
       auto w_str = W ? "WORD" : "BYTE";
 
-      char *reg_name = decode_REG(W, REG);
+      auto reg_name = decode_REG(W, REG);
 
       char decoded_mod[256] = "";
       if(!decode_MOD(&ptr, end, W, MOD, RM, decoded_mod))return;
 
-      if(!D) {
-        src = reg_name;
-        dest = decoded_mod;
-      } else {
-        src = decoded_mod;
-        dest = reg_name;
-      }
+      auto src = !D ? reg_name : decoded_mod;
+      auto dest = !D ? decoded_mod : reg_name;
 
-      printf("  MOV %s, %s\n", dest, src);
-    } else if((*ptr & 0b11111110) == 0b11000110) {
+      printf("MOV %s, %s\n", dest, src);
+
+    }
+    // Immediate to register/memory
+    else if((*ptr & 0b11111110) == 0b11000110) {
       auto W = (*ptr >> 0) & 0b1;
-      ptr += 1;
+      read_u8(&ptr);
 
-      if(ptr >= end)return;
+      if(!has_remaining(ptr, end, 1))return;
 
       auto MOD = (*ptr >> 6) & 0b11;
       auto RM = (*ptr >> 0) & 0b111;
-      ptr += 1;
-
-      char *dest = "";
-      u16 src = 0;
+      read_u8(&ptr);
 
       char decoded_mod[256] = "";
       if(!decode_MOD(&ptr, end, W, MOD, RM, decoded_mod))return;
 
-      dest = decoded_mod;
+      auto dest = decoded_mod;
 
-      if(W) {
-        if(ptr+1 >= end)return;
-        src = *(u16 *)ptr;
-        ptr += 2;
-      } else {
-        if(ptr >= end)return;
-        src = *(u8 *)ptr;
-        ptr += 1;
-      }
+      if(!has_remaining(ptr, end, W ? 2 : 1))return;
+      u16 src = W ? read_u16(&ptr) : read_u8(&ptr);
 
-      printf("  MOV %s, 0x%0*X\n", dest, W ? 4 : 2, src);
+      printf("MOV %s, 0x%0*X\n", dest, W ? 4 : 2, src);
 
-    } else if((*ptr & 0b11110000) == 0b10110000) {
+    }
+    // Immediate to register
+    else if((*ptr & 0b11110000) == 0b10110000) {
       auto W = (*ptr >> 3) & 0b1;
       auto REG = (*ptr >> 0) & 0b111;
-      ptr++;
+      read_u8(&ptr);
 
-      char *dest = decode_REG(W, REG);
+      auto dest = decode_REG(W, REG);
 
-      u16 src = 0;
-      if(W) {
-        if(ptr+1 >= end)return;
-        src = *(u16 *)ptr;
-        ptr += 2;
-      } else {
-        if(ptr >= end)return;
-        src = *(u8 *)ptr;
-        ptr += 1;
-      }
+      if(!has_remaining(ptr, end, W ? 2 : 1))return;
+      u16 src = W ? read_u16(&ptr) : read_u8(&ptr);
 
-      printf("  MOV %s, 0x%0*X\n", dest, W ? 4 : 2, src);
+      printf("MOV %s, 0x%0*X\n", dest, W ? 4 : 2, src);
 
-    } else if((*ptr & 0b11111100) == 0b10100000) {
+    }
+    // Memory to/from accumulator
+    else if((*ptr & 0b11111100) == 0b10100000) {
       auto D = (*ptr >> 1) & 0b1;
       auto W = (*ptr >> 0) & 0b1;
-      ptr++;
+      read_u8(&ptr);
 
-      if(ptr+1 >= end)return;
-      u16 address = *(u16 *)ptr;
-      ptr += 2;
+      if(!has_remaining(ptr, end, 2))return;
+      u16 address = read_u16(&ptr);
 
-      char *reg = W ? "AX" : "AL";
+      auto reg = W ? "AX" : "AL";
+
+      char mem[256] = "";
 
       auto w_str = W ? "WORD":"BYTE";
-      char mem[256] = "";
-      sprintf(mem, "%s PTR:[0x%04X]", w_str, address);
+      sprintf(mem, "%s [0x%04X]", w_str, address);
 
-      char *src = "";
-      char *dest = "";
-
-      if(D) {
-        src = reg;
-        dest = mem;
-      } else {
-        src = mem;
-        dest = reg;
-      }
+      auto src = D ? reg : mem;
+      auto dest = D ? mem : reg;
       
-      printf("  MOV %s, %s\n", dest, src);
+      printf("MOV %s, %s\n", dest, src);
 
-    } else if((*ptr & 0b11111101) == 0b10001100) {
+    }
+    // Segment register from/to register/memory
+    else if((*ptr & 0b11111101) == 0b10001100) {
       auto D = (*ptr >> 1) & 0b1;
-      ptr++;
+      read_u8(&ptr);
       
-      if(ptr >= end)return;
+      if(!has_remaining(ptr, end, 1))return;
       
       auto MOD = (*ptr >> 6) & 0b11;
       auto SR = (*ptr >> 3) & 0b11;
       auto RM = (*ptr >> 0) & 0b111;
-      ptr++;
+      read_u8(&ptr);
 
       auto seg_reg = decode_SR(SR);
 
       char decoded_mod[256] = "";
       if(!decode_MOD(&ptr, end, 1, MOD, RM, decoded_mod))return;
 
-      char *src = "";
-      char *dest = "";
-      if(D) {
-        src = decoded_mod;
-        dest = seg_reg;
-      } else {
-        src = seg_reg;
-        dest = decoded_mod;
-      }
+      auto src = D ? decoded_mod : seg_reg;
+      auto dest = D ? seg_reg : decoded_mod;
 
-      printf("  MOV %s, %s\n", dest, src);
+      printf("MOV %s, %s\n", dest, src);
     } else {
       printf("Error: Unknown byte %02x\n", *ptr);
       return ;
@@ -229,6 +207,7 @@ int main(int arg_count, char **args){
     auto path = args[1];
     auto read_res = file_read_content_to_memory(path);
     if(read_res.ok) {
+      printf("bits 16\n");
       parse_8086(read_res.data, read_res.size);
     } else {
       printf("Error: could not open '%s'\n", path);
