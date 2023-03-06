@@ -81,11 +81,11 @@ bool decode_MOD(u8 **ptr_p, u8 *end, u8 W, u8 MOD, u8 RM, char *decoded_mod){
   return true;
 }
 
-void parse_8086(u8 *data, um size){
+bool parse_8086(u8 *data, um size){
   auto ptr = data;
   auto end = ptr + size;
 
-  while(ptr < end) {
+  while(has_remaining(ptr, end, 1)) {
 
     // Register/memory to/from register
     if((*ptr & 0b11111100) == 0b10001000) {
@@ -93,7 +93,7 @@ void parse_8086(u8 *data, um size){
       auto W = (*ptr >> 0) & 0b1;
       read_u8(&ptr);
 
-      if(!has_remaining(ptr, end, 1))return;
+      if(!has_remaining(ptr, end, 1))return false;
 
       auto MOD = (*ptr >> 6) & 0b11;
       auto REG = (*ptr >> 3) & 0b111;
@@ -105,7 +105,7 @@ void parse_8086(u8 *data, um size){
       auto reg_name = decode_REG(W, REG);
 
       char decoded_mod[256] = "";
-      if(!decode_MOD(&ptr, end, W, MOD, RM, decoded_mod))return;
+      if(!decode_MOD(&ptr, end, W, MOD, RM, decoded_mod))return false;
 
       auto src = !D ? reg_name : decoded_mod;
       auto dest = !D ? decoded_mod : reg_name;
@@ -118,18 +118,18 @@ void parse_8086(u8 *data, um size){
       auto W = (*ptr >> 0) & 0b1;
       read_u8(&ptr);
 
-      if(!has_remaining(ptr, end, 1))return;
+      if(!has_remaining(ptr, end, 1))return false;
 
       auto MOD = (*ptr >> 6) & 0b11;
       auto RM = (*ptr >> 0) & 0b111;
       read_u8(&ptr);
 
       char decoded_mod[256] = "";
-      if(!decode_MOD(&ptr, end, W, MOD, RM, decoded_mod))return;
+      if(!decode_MOD(&ptr, end, W, MOD, RM, decoded_mod))return false;
 
       auto dest = decoded_mod;
 
-      if(!has_remaining(ptr, end, W ? 2 : 1))return;
+      if(!has_remaining(ptr, end, W ? 2 : 1))return false;
       u16 src = W ? read_u16(&ptr) : read_u8(&ptr);
 
       printf("MOV %s, 0x%0*X\n", dest, W ? 4 : 2, src);
@@ -143,7 +143,7 @@ void parse_8086(u8 *data, um size){
 
       auto dest = decode_REG(W, REG);
 
-      if(!has_remaining(ptr, end, W ? 2 : 1))return;
+      if(!has_remaining(ptr, end, W ? 2 : 1))return false;
       u16 src = W ? read_u16(&ptr) : read_u8(&ptr);
 
       printf("MOV %s, 0x%0*X\n", dest, W ? 4 : 2, src);
@@ -155,7 +155,7 @@ void parse_8086(u8 *data, um size){
       auto W = (*ptr >> 0) & 0b1;
       read_u8(&ptr);
 
-      if(!has_remaining(ptr, end, 2))return;
+      if(!has_remaining(ptr, end, 2))return false;
       u16 address = read_u16(&ptr);
 
       auto reg = W ? "AX" : "AL";
@@ -176,7 +176,7 @@ void parse_8086(u8 *data, um size){
       auto D = (*ptr >> 1) & 0b1;
       read_u8(&ptr);
       
-      if(!has_remaining(ptr, end, 1))return;
+      if(!has_remaining(ptr, end, 1))return false;
       
       auto MOD = (*ptr >> 6) & 0b11;
       auto SR = (*ptr >> 3) & 0b11;
@@ -186,18 +186,20 @@ void parse_8086(u8 *data, um size){
       auto seg_reg = decode_SR(SR);
 
       char decoded_mod[256] = "";
-      if(!decode_MOD(&ptr, end, 1, MOD, RM, decoded_mod))return;
+      if(!decode_MOD(&ptr, end, 1, MOD, RM, decoded_mod))return false;
 
       auto src = D ? decoded_mod : seg_reg;
       auto dest = D ? seg_reg : decoded_mod;
 
       printf("MOV %s, %s\n", dest, src);
-    } else {
-      printf("Error: Unknown byte %02x\n", *ptr);
-      return ;
     }
-
+    else {
+      fprintf(stderr, "Error: Unknown byte %02x\n", *ptr);
+      return false;
+    }
   }
+
+  return true;
 }
 
 int main(int arg_count, char **args){
@@ -208,16 +210,19 @@ int main(int arg_count, char **args){
     auto read_res = file_read_content_to_memory(path);
     if(read_res.ok) {
       printf("bits 16\n");
-      parse_8086(read_res.data, read_res.size);
+      if(!parse_8086(read_res.data, read_res.size)) {
+        return 1;
+      }
     } else {
-      printf("Error: could not open '%s'\n", path);
+      fprintf(stderr, "Error: could not open '%s'\n", path);
+      return 1;
     }
 
   } else {
-    printf("Error: expecting one argument\n");
-    printf("\n");
-    printf("  Usage: main.exe <bin-file>\n");
-    printf("\n");
+    fprintf(stderr, "Error: expecting one argument\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  Usage: main.exe <bin-file>\n");
+    fprintf(stderr, "\n");
     return 1;
   }
 
