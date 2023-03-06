@@ -87,7 +87,7 @@ bool parse_8086(u8 *data, um size){
 
   while(has_remaining(ptr, end, 1)) {
 
-    // Register/memory to/from register
+    // MOV: Register/memory to/from register
     if((*ptr & 0b11111100) == 0b10001000) {
       auto D = (*ptr >> 1) & 0b1;
       auto W = (*ptr >> 0) & 0b1;
@@ -113,7 +113,7 @@ bool parse_8086(u8 *data, um size){
       printf("MOV %s, %s\n", dest, src);
 
     }
-    // Immediate to register/memory
+    // MOV: Immediate to register/memory
     else if((*ptr & 0b11111110) == 0b11000110) {
       auto W = (*ptr >> 0) & 0b1;
       read_u8(&ptr);
@@ -135,7 +135,7 @@ bool parse_8086(u8 *data, um size){
       printf("MOV %s, 0x%0*X\n", dest, W ? 4 : 2, src);
 
     }
-    // Immediate to register
+    // MOV: Immediate to register
     else if((*ptr & 0b11110000) == 0b10110000) {
       auto W = (*ptr >> 3) & 0b1;
       auto REG = (*ptr >> 0) & 0b111;
@@ -149,7 +149,7 @@ bool parse_8086(u8 *data, um size){
       printf("MOV %s, 0x%0*X\n", dest, W ? 4 : 2, src);
 
     }
-    // Memory to/from accumulator
+    // MOV: Memory to/from accumulator
     else if((*ptr & 0b11111100) == 0b10100000) {
       auto D = (*ptr >> 1) & 0b1;
       auto W = (*ptr >> 0) & 0b1;
@@ -171,7 +171,7 @@ bool parse_8086(u8 *data, um size){
       printf("MOV %s, %s\n", dest, src);
 
     }
-    // Segment register from/to register/memory
+    // MOV: Segment register from/to register/memory
     else if((*ptr & 0b11111101) == 0b10001100) {
       auto D = (*ptr >> 1) & 0b1;
       read_u8(&ptr);
@@ -192,6 +192,149 @@ bool parse_8086(u8 *data, um size){
       auto dest = D ? seg_reg : decoded_mod;
 
       printf("MOV %s, %s\n", dest, src);
+    }
+    else if((*ptr & 0b11111111) == 0b11111111) {
+      read_u8(&ptr);
+
+      if(!has_remaining(ptr, end, 1))return false;
+
+      auto MOD = (*ptr >> 6) & 0b11;
+      auto RM = (*ptr >> 0) & 0b111;
+
+      // PUSH: Register/Memory
+      if((*ptr & 0b00111000) == 0b00110000) {
+        read_u8(&ptr);
+
+        char decoded_mod[256] = "";
+        if(!decode_MOD(&ptr, end, 1, MOD, RM, decoded_mod))return false;
+
+        printf("PUSH %s\n", decoded_mod);
+      } else return false;
+    }
+    // PUSH: Register
+    else if((*ptr & 0b11111000) == 0b01010000) {
+      auto REG = (*ptr >> 0) & 0b111;
+      read_u8(&ptr);
+
+      auto dest = decode_REG(1, REG);
+
+      printf("PUSH %s\n", dest);
+    }
+    // PUSH: Segment register
+    else if((*ptr & 0b11100111) == 0b00000110) {
+      auto SEG_REG = (*ptr >> 3) & 0b11;
+      read_u8(&ptr);
+
+      auto seg_reg = decode_SR(SEG_REG);
+
+      printf("PUSH %s\n", seg_reg);
+    }
+    // POP: Register
+    else if((*ptr & 0b11111000) == 0b01011000) {
+      auto REG = (*ptr >> 0) & 0b111;
+      read_u8(&ptr);
+
+      auto dest = decode_REG(1, REG);
+
+      printf("POP %s\n", dest);
+    }
+    // POP: Segment register
+    else if((*ptr & 0b11100111) == 0b00000111) {
+      auto SEG_REG = (*ptr >> 3) & 0b11;
+      read_u8(&ptr);
+
+      auto seg_reg = decode_SR(SEG_REG);
+
+      printf("POP %s\n", seg_reg);
+    }
+    else if((*ptr & 0b11111111) == 0b10001111) {
+      read_u8(&ptr);
+
+      if(!has_remaining(ptr, end, 1))return false;
+
+      auto MOD = (*ptr >> 6) & 0b11;
+      auto RM = (*ptr >> 0) & 0b111;
+
+      // POP: Register/memory
+      if((*ptr & 0b00111000) == 0b00000000) {
+        read_u8(&ptr);
+
+        char decoded_mod[256] = "";
+        if(!decode_MOD(&ptr, end, 1, MOD, RM, decoded_mod))return false;
+
+        printf("POP %s\n", decoded_mod);
+      } else return false;
+
+    }
+    // XCHG: Register/memory with register
+    else if((*ptr & 0b11111110) == 0b10000110) {
+      auto W = (*ptr >> 0) & 0b1;
+      read_u8(&ptr);
+
+      if(!has_remaining(ptr, end, 1))return false;
+
+      auto MOD = (*ptr >> 6) & 0b11;
+      auto REG = (*ptr >> 3) & 0b111;
+      auto RM =  (*ptr >> 0) & 0b111;
+      read_u8(&ptr);
+
+      if(!has_remaining(ptr, end, 1))return false;
+
+      auto a = decode_REG(W, REG);
+
+      char decoded_mod[256] = "";
+      if(!decode_MOD(&ptr, end, W, MOD, RM, decoded_mod))return false;
+      auto b = decoded_mod;
+
+      printf("XCHG %s, %s\n", a, b);
+    }
+    // XCHG: Register with accumulator
+    else if((*ptr & 0b11111000) == 0b10010000) {
+      auto REG = (*ptr >> 0) & 0b111;
+      read_u8(&ptr);
+
+      auto b = decode_REG(1, REG);
+
+      printf("XCHG AX, %s\n", b);
+    }
+    // IN/OUT: Fixed port
+    else if((*ptr & 0b11111100) == 0b11100100) {
+      auto W = (*ptr >> 0) & 0b1;
+      auto D = (*ptr >> 1) & 0b1;
+      read_u8(&ptr);
+
+      if(!has_remaining(ptr, end, 1))return false;
+      auto port = read_u8(&ptr);
+      char port_str[256];
+      sprintf(port_str, "%d", port);
+
+      auto data_reg = W ? "AX":"AL";
+
+      auto inst = D ? "OUT" : "IN";
+
+      auto a = !D ? data_reg : port_str;
+      auto b = !D ? port_str : data_reg;
+
+      printf("%s %s, %s\n", inst, a, b);
+    }
+    // IN/OUT: Variable port
+    else if((*ptr & 0b11111100) == 0b11101100) {
+      auto W = (*ptr >> 0) & 0b1;
+      auto D = (*ptr >> 1) & 0b1;
+      read_u8(&ptr);
+
+      auto inst = D ? "OUT" : "IN";
+
+      auto data_reg = W ? "AX":"AL";
+
+      auto a = !D ? data_reg : "DX";
+      auto b = !D ? "DX" : data_reg;
+
+      printf("%s %s, %s\n", inst, a, b);
+    }
+    // XLAT
+    else if((*ptr & 0b11111111) == 0b11010111) {
+      printf("XLAT\n");
     }
     else {
       fprintf(stderr, "Error: Unknown byte %02x\n", *ptr);

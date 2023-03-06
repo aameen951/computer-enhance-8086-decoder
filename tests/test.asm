@@ -2,6 +2,34 @@
 
 bits 16
 
+push word [BX + 0x12]
+push AX
+push BX
+push DS
+POP word [BX + 0x12]
+POP AX
+POP BX
+POP DS
+
+xchg AX, [0x12]
+xchg BX, CX
+xchg AL, [BX+0x44]
+xchg [BX+0x77], AL
+
+xchg ax, bx
+xchg al, bl
+
+in al, 10
+in AX, 11
+IN AL, DX
+IN AX, DX
+OUT 12, al
+OUT 13, AX
+OUT DX, AL
+OUT DX, AX
+
+xlat
+
 mov ax, bx
 mov ax, [BX+SI]
 mov al, [BX+SI]
