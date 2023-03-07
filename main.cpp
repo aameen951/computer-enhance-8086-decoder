@@ -56,24 +56,24 @@ s16 read_s16(u8 **ptr_p){ return (s16)read_u16(ptr_p); }
 
 bool decode_MOD(u8 **ptr_p, u8 *end, u8 W, u8 MOD, u8 RM, char *decoded_mod){
   auto ptr = *ptr_p;
-  auto w_str = W ? "WORD" : "BYTE";
+  auto w_str = W == 0 ? "BYTE " : W == 1 ? "WORD " : "";
 
   if(MOD == 0b00) {
     if(RM == 0b110) {
       if(!has_remaining(ptr, end, 2))return false;
       u16 DIRECT_ADDRESS = read_u16(&ptr);
-      sprintf(decoded_mod, "%s [0x%04X]", w_str, DIRECT_ADDRESS); 
+      sprintf(decoded_mod, "%s[0x%04X]", w_str, DIRECT_ADDRESS); 
     } else {
-      sprintf(decoded_mod, "%s [%s]", w_str, decode_rm_reg_displacement(RM));
+      sprintf(decoded_mod, "%s[%s]", w_str, decode_rm_reg_displacement(RM));
     }
   } else if(MOD == 0b01) {
     if(!has_remaining(ptr, end, 1))return false;
     auto DISPLACEMENT = read_s8(&ptr);
-    sprintf(decoded_mod, "%s [%s + %d]", w_str, decode_rm_reg_displacement(RM), DISPLACEMENT);
+    sprintf(decoded_mod, "%s[%s + %d]", w_str, decode_rm_reg_displacement(RM), DISPLACEMENT);
   } else if(MOD == 0b10) {
     if(!has_remaining(ptr, end, 2))return false;
     auto DISPLACEMENT = read_s16(&ptr);
-    sprintf(decoded_mod, "%s [%s + %d]", w_str, decode_rm_reg_displacement(RM), DISPLACEMENT);
+    sprintf(decoded_mod, "%s[%s + %d]", w_str, decode_rm_reg_displacement(RM), DISPLACEMENT);
   } else if(MOD == 0b11) {
     sprintf(decoded_mod, "%s", decode_REG(W, RM));
   }
@@ -332,9 +332,64 @@ bool parse_8086(u8 *data, um size){
 
       printf("%s %s, %s\n", inst, a, b);
     }
-    // XLAT
+    // XLAT: Translate byte to AL
     else if((*ptr & 0b11111111) == 0b11010111) {
+      read_u8(&ptr);
       printf("XLAT\n");
+    }
+    // LEA: Load Effective-Address (EA) to register
+    else if((*ptr & 0b11111111) == 0b10001101) {
+      read_u8(&ptr);
+
+      if(!has_remaining(ptr, end, 1))return false;
+
+      auto MOD = (*ptr >> 6) & 0b11;
+      auto REG = (*ptr >> 3) & 0b111;
+      auto RM =  (*ptr >> 0) & 0b111;
+      read_u8(&ptr);
+
+      auto decoded_reg = decode_REG(1, REG);
+
+      char decoded_mod[256] = "";
+      if(!decode_MOD(&ptr, end, 1, MOD, RM, decoded_mod))return false;
+      auto b = decoded_mod;
+
+      printf("LEA %s, %s\n", decoded_reg, decoded_mod);
+    }
+    // LDS/LES: Load pointer to DS
+    else if((*ptr & 0b11111110) == 0b11000100) {
+      auto inst = (*ptr >> 0) & 0b1 ? "LDS" : "LES";
+      read_u8(&ptr);
+
+      if(!has_remaining(ptr, end, 1))return false;
+
+      auto MOD = (*ptr >> 6) & 0b11;
+      auto REG = (*ptr >> 3) & 0b111;
+      auto RM =  (*ptr >> 0) & 0b111;
+      read_u8(&ptr);
+
+      auto dest = decode_REG(1, REG);
+
+      char decoded_mod[256] = "";
+      if(!decode_MOD(&ptr, end, 2, MOD, RM, decoded_mod))return false;
+
+      auto src = decoded_mod;
+
+      printf("%s %s, %s\n", inst, dest, src);
+    }
+    // LAHF/SAHF
+    else if((*ptr & 0b11111110) == 0b10011110) {
+      auto inst = (*ptr >> 0) & 0b1 ? "LAHF" : "SAHF";
+      read_u8(&ptr);
+
+      printf("%s\n", inst);
+    }
+    // PUSHF/POPF
+    else if((*ptr & 0b11111110) == 0b10011100) {
+      auto inst = (*ptr >> 0) & 0b1 ? "POPF" : "PUSHF";
+      read_u8(&ptr);
+
+      printf("%s\n", inst);
     }
     else {
       fprintf(stderr, "Error: Unknown byte %02x\n", *ptr);

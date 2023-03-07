@@ -30,6 +30,16 @@ OUT DX, AX
 
 xlat
 
+lea ax, [BX+DI+12]
+
+lds ax, [BX + 123]
+les ax, [BX + 123]
+
+lahf
+sahf
+pushf
+popf
+
 mov ax, bx
 mov ax, [BX+SI]
 mov al, [BX+SI]
