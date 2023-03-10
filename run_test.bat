@@ -24,6 +24,8 @@ IF ERRORLEVEL 1 goto :error
 
 popd
 
+echo.
+echo OK
 ENDLOCAL
 EXIT /B 0
 :error

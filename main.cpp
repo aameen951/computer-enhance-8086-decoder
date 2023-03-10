@@ -124,8 +124,11 @@ bool decode_2__ii__im__rm(char *inst, u8 **ptr_p, u8 *end, u8 S, u8 W) {
 
   auto dest = decoded_mod;
 
-  if(!has_remaining(ptr, end, W ? 2 : 1))return false;
-  u16 src = W ? read_u16(&ptr) : read_u8(&ptr);
+  u8 data_size = !S && W ? 2 : 1;
+
+  if(!has_remaining(ptr, end, data_size))return false;
+
+  u16 src = data_size == 2 ? read_u16(&ptr) : S ? ((s16)read_s8(&ptr)) : read_u8(&ptr);
 
   printf("%s %s, 0x%0*X\n", inst, dest, W ? 4 : 2, src);
 
@@ -184,7 +187,33 @@ bool decode_2___w__im__rm(char *inst, u8 **ptr_p, u8 *end) {
 
   return decode_2__ii__im__rm(inst, ptr_p, end, 0, W);
 }
+bool decode_2__sw__im__rm(char *inst, u8 **ptr_p, u8 *end) {
+  auto S = (**ptr_p >> 1) & 0b1;
+  auto W = (**ptr_p >> 0) & 0b1;
+  read_u8(ptr_p);
+  return decode_2__ii__im__rm(inst, ptr_p, end, S, W);
+}
+bool decode_2___w__im__ac(char *inst, u8 **ptr_p, u8 *end) {
+  auto ptr = *ptr_p;
 
+  auto W = (*ptr >> 0) & 0b1;
+  read_u8(&ptr);
+
+  if(!has_remaining(ptr, end, 1))return false;
+
+  auto dest = W ? "AX" : "AL";
+
+  u8 data_size = W ? 2 : 1;
+
+  if(!has_remaining(ptr, end, data_size))return false;
+
+  u16 src = data_size == 2 ? read_u16(&ptr) : read_u8(&ptr);
+
+  printf("%s %s, 0x%0*X\n", inst, dest, W ? 4 : 2, src);
+
+  *ptr_p = ptr;
+  return true;
+}
 
 bool parse_8086(u8 *data, um size){
   auto ptr = data;
@@ -297,6 +326,23 @@ bool parse_8086(u8 *data, um size){
 
       printf("XCHG AX, %s\n", b);
 
+    } else if((*ptr & 0b11111100) == 0b00000000) {
+      if(!decode_2__dw__rg__rm("ADD", &ptr, end))return false;
+    } else if((*ptr & 0b11111100) == 0b00010000) {
+      if(!decode_2__dw__rg__rm("ADC", &ptr, end))return false;
+    } else if((*ptr & 0b11111110) == 0b00000100) {
+      if(!decode_2___w__im__ac("ADD", &ptr, end))return false;
+    } else if((*ptr & 0b11111110) == 0b00010100) {
+      if(!decode_2___w__im__ac("ADC", &ptr, end))return false;
+    } else if((*ptr & 0b11111100) == 0b10000000) {
+      if(!has_remaining(ptr, end, 2))return false;
+
+      if(masked_equal(ptr[1], 0b00111000, 0b00000000)) {
+        if(!decode_2__sw__im__rm("ADD", &ptr, end))return false;
+      } else if(masked_equal(ptr[1], 0b00111000, 0b00010000)) {
+        if(!decode_2__sw__im__rm("ADC", &ptr, end))return false;
+      } else return false;
+
     } else if((*ptr & 0b11111100) == 0b11100100) {
       auto W = (*ptr >> 0) & 0b1;
       auto D = (*ptr >> 1) & 0b1;
@@ -341,12 +387,10 @@ bool parse_8086(u8 *data, um size){
     } else if((*ptr & 0b11111110) == 0b10011110) {
       auto inst = (*ptr >> 0) & 0b1 ? "LAHF" : "SAHF";
       read_u8(&ptr);
-
       printf("%s\n", inst);
     } else if((*ptr & 0b11111110) == 0b10011100) {
       auto inst = (*ptr >> 0) & 0b1 ? "POPF" : "PUSHF";
       read_u8(&ptr);
-
       printf("%s\n", inst);
     } else if(masked_equal(*ptr, 0b11111111, 0b00110111)) {
       read_u8(&ptr);
@@ -385,6 +429,7 @@ int main(int arg_count, char **args){
     if(read_res.ok) {
       printf("bits 16\n");
       if(!parse_8086(read_res.data, read_res.size)) {
+        fprintf(stderr, "Error: decoding failed\n");
         return 1;
       }
     } else {
