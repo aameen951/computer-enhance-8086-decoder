@@ -10,6 +10,8 @@ ADD [BX + 12], cx
 ADD [BX + 12], cl
 ADD cx, 1
 ADD cl, 1
+ADD BYTE [BX], 1
+ADD WORD [BX], 1
 ADD cx, -1
 ADD cl, -1
 ADD cx, 500

@@ -2,40 +2,30 @@
 #include "my_std.h"
 #include "file_reader.h"
 
-char *decode_REG(u8 W, u8 REG){
-  switch(REG) {
-    case 0b000: return W ? "AX" : "AL";
-    case 0b001: return W ? "CX" : "CL";
-    case 0b010: return W ? "DX" : "DL";
-    case 0b011: return W ? "BX" : "BL";
-    case 0b100: return W ? "SP" : "AH";
-    case 0b101: return W ? "BP" : "CH";
-    case 0b110: return W ? "SI" : "DH";
-    case 0b111: return W ? "DI" : "BH";
-  }
-  return "<ERR>";
+char *JCC_INST[] = {
+  "JO", "JNO", "JB", "JAE", "JE", "JNE", "JBE", "JA",
+  "JS", "JNS", "JP", "JNP", "JL", "JGE", "JLE", "JG",
+};
+char *LOGIC_OP_2OPR[] = {
+  "ADD", "OR", "ADC", "SBB", "AND", "SUB", "XOR", "CMP"
+};
+char *BYTE_WORD_REG[2][8] = {
+  {"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH"},
+  {"AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI"},
+};
+char *SR_REG[] = {
+  "ES", "CS", "SS", "DS"
+};
+char *RM_DISPLACEMENT[] = {
+  "BX + SI", "BX + DI", "BP + SI", "BP + DI", "SI", "DI", "BP", "BX"
+};
+char *W_TO_OPR_SIZE[] = {"BYTE", "WORD"};
+
+inline bool masked_equal(u8 byte, u8 mask, u8 value){
+  return (byte & mask) == value;
 }
-char *decode_SR(u8 SR){
-  switch(SR) {
-    case 0b00: return "ES";
-    case 0b01: return "CS";
-    case 0b10: return "SS";
-    case 0b11: return "DS";
-  }
-  return "<ERR>";
-}
-char *decode_rm_reg_displacement(u8 RM){
-  switch(RM) {
-    case 0b000: return "BX + SI";
-    case 0b001: return "BX + DI";
-    case 0b010: return "BP + SI";
-    case 0b011: return "BP + DI";
-    case 0b100: return "SI";
-    case 0b101: return "DI";
-    case 0b110: return "BP";
-    case 0b111: return "BX";
-  }
-  return "<ERR>";
+inline u8 shift_and(u8 byte, u8 shift, u8 and){
+  return (byte >> shift) & and;
 }
 
 bool has_remaining(u8 *ptr, u8 *end, um size){
@@ -54,56 +44,81 @@ u16 read_u16(u8 **ptr_p){
 s8 read_s8(u8 **ptr_p){ return (s8)read_u8(ptr_p); }
 s16 read_s16(u8 **ptr_p){ return (s16)read_u16(ptr_p); }
 
-bool decode_MOD(u8 **ptr_p, u8 *end, u8 W, u8 MOD, u8 RM, char *decoded_mod){
-  auto ptr = *ptr_p;
-  auto w_str = W == 0 ? "BYTE " : W == 1 ? "WORD " : "";
+struct Inst2ndByte {
+  u8 MOD;
+  union {
+    u8 REG;
+    u8 OP;
+    u8 SR;
+    u8 YYY;
+  };
+  u8 RM;
+};
+Inst2ndByte decode_2nd_byte(u8 byte){
+  Inst2ndByte result = {};
+  result.MOD = (byte >> 6) & 0b11;
+  result.REG = (byte >> 3) & 0b111;
+  result.RM = (byte >> 0) & 0b111;
+  return result;
+}
 
-  if(MOD == 0b00) {
-    if(RM == 0b110) {
+bool decode_rm(u8 **ptr_p, u8 *end, u8 W, u8 MOD, u8 RM, char *decoded_rm, bool skip_size_override = false) {
+  auto ptr = *ptr_p;
+  auto w_str = !skip_size_override ? (!W ? "BYTE " : "WORD ") : "";
+
+  switch(MOD) {
+
+    case 0b00: {
+      if(RM == 0b110) {
+        if(!has_remaining(ptr, end, 2))return false;
+        u16 DIRECT_ADDRESS = read_u16(&ptr);
+        sprintf(decoded_rm, "%s[0x%04X]", w_str, DIRECT_ADDRESS); 
+      } else {
+        sprintf(decoded_rm, "%s[%s]", w_str, RM_DISPLACEMENT[RM]);
+      }
+    } break;
+
+    case 0b01: {
+      if(!has_remaining(ptr, end, 1))return false;
+      auto DISPLACEMENT = read_s8(&ptr);
+      sprintf(decoded_rm, "%s[%s + %d]", w_str, RM_DISPLACEMENT[RM], DISPLACEMENT);
+    } break;
+
+    case 0b10: {
       if(!has_remaining(ptr, end, 2))return false;
-      u16 DIRECT_ADDRESS = read_u16(&ptr);
-      sprintf(decoded_mod, "%s[0x%04X]", w_str, DIRECT_ADDRESS); 
-    } else {
-      sprintf(decoded_mod, "%s[%s]", w_str, decode_rm_reg_displacement(RM));
-    }
-  } else if(MOD == 0b01) {
-    if(!has_remaining(ptr, end, 1))return false;
-    auto DISPLACEMENT = read_s8(&ptr);
-    sprintf(decoded_mod, "%s[%s + %d]", w_str, decode_rm_reg_displacement(RM), DISPLACEMENT);
-  } else if(MOD == 0b10) {
-    if(!has_remaining(ptr, end, 2))return false;
-    auto DISPLACEMENT = read_s16(&ptr);
-    sprintf(decoded_mod, "%s[%s + %d]", w_str, decode_rm_reg_displacement(RM), DISPLACEMENT);
-  } else if(MOD == 0b11) {
-    sprintf(decoded_mod, "%s", decode_REG(W, RM));
+      auto DISPLACEMENT = read_s16(&ptr);
+      sprintf(decoded_rm, "%s[%s + %d]", w_str, RM_DISPLACEMENT[RM], DISPLACEMENT);
+    } break;
+
+    case 0b11: {
+      sprintf(decoded_rm, "%s", BYTE_WORD_REG[!!W][RM]);
+    } break;
+
+    default: return false;
   }
+
   *ptr_p = ptr;
   return true;
 }
 
-bool masked_equal(u8 byte, u8 mask, u8 value){
-  return (byte & mask) == value;
-}
 
 bool decode_2__ii__rg__rm(const char *inst, u8 **ptr_p, u8 *end, u8 D, u8 W) {
   auto ptr = *ptr_p;
 
   if(!has_remaining(ptr, end, 1))return false;
 
-  auto MOD = (*ptr >> 6) & 0b11;
-  auto REG = (*ptr >> 3) & 0b111;
-  auto RM = (*ptr >> 0) & 0b111;
+  auto second = decode_2nd_byte(*ptr);
   read_u8(&ptr);
 
-  auto w_str = W ? "WORD" : "BYTE";
+  auto w_str = W_TO_OPR_SIZE[W];
 
-  auto reg_name = decode_REG(W, REG);
+  auto reg_name = BYTE_WORD_REG[W][second.REG];
 
-  char decoded_mod[256] = "";
-  if(!decode_MOD(&ptr, end, W, MOD, RM, decoded_mod))return false;
+  char decoded_rm[256] = "";
+  if(!decode_rm(&ptr, end, W, second.MOD, second.RM, decoded_rm))return false;
 
-  auto src = !D ? reg_name : decoded_mod;
-  auto dest = !D ? decoded_mod : reg_name;
+  auto src = !D ? reg_name : decoded_rm;
+  auto dest = !D ? decoded_rm : reg_name;
 
   printf("%s %s, %s\n", inst, dest, src);
 
@@ -115,14 +130,13 @@ bool decode_2__ii__im__rm(char *inst, u8 **ptr_p, u8 *end, u8 S, u8 W) {
 
   if(!has_remaining(ptr, end, 1))return false;
 
-  auto MOD = (*ptr >> 6) & 0b11;
-  auto RM = (*ptr >> 0) & 0b111;
+  auto second = decode_2nd_byte(*ptr);
   read_u8(&ptr);
 
-  char decoded_mod[256] = "";
-  if(!decode_MOD(&ptr, end, W, MOD, RM, decoded_mod))return false;
+  char decoded_rm[256] = "";
+  if(!decode_rm(&ptr, end, W, second.MOD, second.RM, decoded_rm))return false;
 
-  auto dest = decoded_mod;
+  auto dest = decoded_rm;
 
   u8 data_size = !S && W ? 2 : 1;
 
@@ -141,7 +155,7 @@ bool decode_1__rg(char *inst, u8 **ptr_p, u8 *end) {
   auto REG = (*ptr >> 0) & 0b111;
   read_u8(&ptr);
 
-  auto dest = decode_REG(1, REG);
+  auto dest = BYTE_WORD_REG[1][REG];
 
   printf("%s %s\n", inst, dest);
 
@@ -157,10 +171,10 @@ bool decode_1__i__rm(char *inst, u8 **ptr_p, u8 *end, u8 W) {
   auto RM = (*ptr >> 0) & 0b111;
   read_u8(&ptr);
 
-  char decoded_mod[256] = "";
-  if(!decode_MOD(&ptr, end, W, MOD, RM, decoded_mod))return false;
+  char decoded_rm[256] = "";
+  if(!decode_rm(&ptr, end, W, MOD, RM, decoded_rm))return false;
 
-  printf("%s %s\n", inst, decoded_mod);
+  printf("%s %s\n", inst, decoded_rm);
 
   *ptr_p = ptr;
   return true;
@@ -215,205 +229,540 @@ bool decode_2___w__im__ac(char *inst, u8 **ptr_p, u8 *end) {
   return true;
 }
 
+
 bool parse_8086(u8 *data, um size){
   auto ptr = data;
   auto end = ptr + size;
 
   while(has_remaining(ptr, end, 1)) {
+    auto b78 = *ptr >> 6;
 
-    if((*ptr & 0b11111100) == 0b10001000) {
-      if(!decode_2__dw__rg__rm("MOV", &ptr, end))return false;
-    } else if((*ptr & 0b11111110) == 0b11000110) {
-      if(!decode_2___w__im__rm("MOV", &ptr, end))return false;
-    } else if((*ptr & 0b11110000) == 0b10110000) {
-      auto W = (*ptr >> 3) & 0b1;
-      auto REG = (*ptr >> 0) & 0b111;
-      read_u8(&ptr);
+    switch(b78) {
+      case 0b00: {
 
-      auto dest = decode_REG(W, REG);
+        if(masked_equal(*ptr, 0b000100, 0b000000)) {
+          // Arithmetic: register/memory to register
+ 
+          char *inst = LOGIC_OP_2OPR[(*ptr >> 3) & 0b111];
+          if(!decode_2__dw__rg__rm(inst, &ptr, end))return false;
 
-      if(!has_remaining(ptr, end, W ? 2 : 1))return false;
-      u16 src = W ? read_u16(&ptr) : read_u8(&ptr);
+        } else if(masked_equal(*ptr, 0b000110, 0b000100)) {
+          // Arithmetic: immediate to register/memory
 
-      printf("MOV %s, 0x%0*X\n", dest, W ? 4 : 2, src);
-    } else if((*ptr & 0b11111100) == 0b10100000) {
-      auto D = (*ptr >> 1) & 0b1;
-      auto W = (*ptr >> 0) & 0b1;
-      read_u8(&ptr);
+          char *inst = LOGIC_OP_2OPR[(*ptr >> 3) & 0b111];
+          if(!decode_2___w__im__ac(inst, &ptr, end))return false;
 
-      if(!has_remaining(ptr, end, 2))return false;
-      u16 address = read_u16(&ptr);
+        } else if(masked_equal(*ptr, 0b100111, 0b000110)) {
+          // PUSH: Segment registers
 
-      auto reg = W ? "AX" : "AL";
+          auto SEG_REG = (*ptr >> 3) & 0b11;
+          read_u8(&ptr);
+          auto seg_reg = SR_REG[SEG_REG];
+          printf("PUSH %s\n", seg_reg);
 
-      char mem[256] = "";
+        } else if(masked_equal(*ptr, 0b100111, 0b000111)) {
+          // POP: Segment registers
 
-      auto w_str = W ? "WORD":"BYTE";
-      sprintf(mem, "%s [0x%04X]", w_str, address);
+          auto sr = (*ptr >> 3) & 0b11;
+          read_u8(&ptr);
+          auto seg_reg = SR_REG[sr];
+          printf("POP %s\n", seg_reg);
 
-      auto src = D ? reg : mem;
-      auto dest = D ? mem : reg;
+        } else if(masked_equal(*ptr, 0b100111, 0b100110)) {
+          // Segment override
+          // TODO:
+
+          auto sr = (*ptr >> 3) & 0b11;
+          auto seg_reg = SR_REG[sr];
+          return false;
+
+        } else if(masked_equal(*ptr, 0b100111, 0b100111)) {
+          char *inst[] = {"DAA", "DAS", "AAA", "AAS"};
+
+          read_u8(&ptr);
+          printf("%s\n", inst[(*ptr >> 3) & 0b11]);
+
+        } else return false;
+
+      } break;
+      case 0b01: {
+
+        if(masked_equal(*ptr, 0b111000, 0b000000)) {
+
+          if(!decode_1__rg("INC", &ptr, end))return false;
+
+        } else if(masked_equal(*ptr, 0b111000, 0b001000)) {
+
+          if(!decode_1__rg("DEC", &ptr, end))return false;
+
+        } else if(masked_equal(*ptr, 0b111000, 0b010000)) {
+
+          if(!decode_1__rg("PUSH", &ptr, end))return false;
+
+        } else if(masked_equal(*ptr, 0b111000, 0b010000)) {
+
+          if(!decode_1__rg("POP", &ptr, end))return false;
+
+        } else if(masked_equal(*ptr, 0b110000, 0b110000)) {
+          auto JCC = (*ptr >> 0) & 0b1111;
+          read_u8(&ptr);
+
+          auto jcc = JCC_INST[JCC];
+
+          if(!has_remaining(ptr, end, 1))return false;
+          s8 inc = read_s8(&ptr);
+
+          printf("%s %d\n", jcc, inc);
+
+        } else return false;
+
+      } break;
+      case 0b10: {
+
+        if(masked_equal(*ptr, 0b111100, 0b000000)) {
+
+          if(!has_remaining(ptr, end, 2))return false;
+
+          char *inst = LOGIC_OP_2OPR[(*ptr >> 3) & 0b111];
+          if(!decode_2__sw__im__rm(inst, &ptr, end))return false;
+
+        } else if(masked_equal(*ptr, 0b111110, 0b000100)) {
+
+          if(!decode_2___w__rg__rm("TEST", &ptr, end))return false;
+
+        } else if(masked_equal(*ptr, 0b111110, 0b000110)) {
+
+          if(!decode_2___w__rg__rm("XCHG", &ptr, end))return false;
+
+        } else if(masked_equal(*ptr, 0b111100, 0b001000)) {
+
+          if(!decode_2__dw__rg__rm("MOV", &ptr, end))return false;
+
+        } else if(masked_equal(*ptr, 0b111111, 0b001101)) {
+
+          read_u8(&ptr);
+          if(!decode_2__ii__rg__rm("LEA", &ptr, end, 1, 1))return false;
+
+        } else if(masked_equal(*ptr, 0b111101, 0b001100)) {
+          auto D = (*ptr >> 1) & 0b1;
+          read_u8(&ptr);
+          
+          if(!has_remaining(ptr, end, 1))return false;
+
+          auto sb = decode_2nd_byte(*ptr);
+          
+          read_u8(&ptr);
+
+          auto seg_reg = SR_REG[sb.SR];
+
+          char decoded_rm[256] = "";
+          if(!decode_rm(&ptr, end, 1, sb.MOD, sb.RM, decoded_rm))return false;
+
+          auto src = D ? decoded_rm : seg_reg;
+          auto dest = D ? seg_reg : decoded_rm;
+
+          printf("MOV %s, %s\n", dest, src);
+
+        } else if(masked_equal(*ptr, 0b111111, 0b001111)) {
+          if(!has_remaining(ptr, end, 2))return false;
+
+          if((ptr[1] & 0b00111000) == 0b00000000) {
+            
+            if(!decode_1__i__rm("POP", &ptr, end, 1))return false;
+
+          } else return false;
+
+        } else if(masked_equal(*ptr, 0b111000, 0b010000)) {
+          auto REG = *ptr & 0b111;
+          read_u8(&ptr);
+
+          auto reg = BYTE_WORD_REG[1][REG];
+
+          printf("XCHG AX, %s\n", reg);
+
+        } else if(masked_equal(*ptr, 0b111111, 0b011000)) {
+
+          read_u8(&ptr);
+          printf("CBW\n");
+
+        } else if(masked_equal(*ptr, 0b111111, 0b011001)) {
+
+          read_u8(&ptr);
+          printf("CWD\n");
+
+        } else if(masked_equal(*ptr, 0b111111, 0b011010)) {
+          read_u8(&ptr);
+          
+          if(!has_remaining(ptr, end, 4))return false;
+
+          auto IP = read_u16(&ptr);
+          auto CS = read_u16(&ptr);
+
+          printf("CALL 0x%x:0x%x\n", CS, IP);
+
+        } else if(masked_equal(*ptr, 0b111111, 0b011011)) {
+
+          read_u8(&ptr);
+          printf("WAIT\n");
+
+        } else if(masked_equal(*ptr, 0b111100, 0b011100)) {
+          auto idx = *ptr & 0b11;
+          read_u8(&ptr);
+
+          char *inst[] = {"PUSHF", "POPF", "SAHF", "LAHF"};
+          printf("%s\n", inst[idx]);
+
+        } else if(masked_equal(*ptr, 0b111100, 0b100000)) {
+
+          auto D = (*ptr >> 1) & 0b1;
+          auto W = (*ptr >> 0) & 0b1;
+          read_u8(&ptr);
+
+          if(!has_remaining(ptr, end, 2))return false;
+          u16 address = read_u16(&ptr);
+
+          auto reg = W ? "AX" : "AL";
+
+          char mem[256] = "";
+
+          auto w_str = W_TO_OPR_SIZE[W];
+          sprintf(mem, "%s [0x%04X]", w_str, address);
+
+          auto src = D ? reg : mem;
+          auto dest = D ? mem : reg;
+          
+          printf("MOV %s, %s\n", dest, src);
+
+        } else if(masked_equal(*ptr, 0b111100, 0b100100)) {
+
+          auto INST = (*ptr >> 1) & 0b10;
+          auto W = (*ptr >> 0) & 0b0;
+          read_u8(&ptr);
+
+          auto inst = INST == 0? "MOVS" : "CMPS";
+          auto size = W_TO_OPR_SIZE[W];
+
+          printf("%s %s [DI], %s [SI]\n", inst, size, size);
+
+        } else if(masked_equal(*ptr, 0b111110, 0b101000)) {
+
+          auto W = (*ptr >> 0) & 0b1;
+          read_u8(&ptr);
+
+          if(!has_remaining(ptr, end, W ? 2 : 1))return false;
+          u16 imm = W ? read_u16(&ptr) : read_u8(&ptr);
+
+          char *dest = W ? "AX" : "AL";
+
+          printf("TEST %s, 0x%0*X\n", dest, W ? 4 : 2, imm);
+
+        } else if(masked_equal(*ptr, 0b111110, 0b101010)) {
+          auto W = (*ptr >> 0) & 0b0;
+          read_u8(&ptr);
+
+          auto size = W_TO_OPR_SIZE[W];
+
+          printf("STOS %s [DI], %s [SI]\n", size, size);
+        } else if(masked_equal(*ptr, 0b111110, 0b101100)) {
+          auto W = (*ptr >> 0) & 0b0;
+          read_u8(&ptr);
+
+          auto size = W_TO_OPR_SIZE[W];
+
+          printf("LODS %s [DI], %s [SI]\n", size, size);
+        } else if(masked_equal(*ptr, 0b111110, 0b101110)) {
+          auto W = (*ptr >> 0) & 0b0;
+          read_u8(&ptr);
+
+          auto size = W_TO_OPR_SIZE[W];
+
+          printf("SCAS %s [DI], %s [SI]\n", size, size);
+
+        } else if(masked_equal(*ptr, 0b110000, 0b110000)) {
+
+          auto W = shift_and(*ptr, 3, 0b1);
+          auto REG = shift_and(*ptr, 0, 0b111);
+          read_u8(&ptr);
+
+          auto dest = BYTE_WORD_REG[W][REG];
+
+          if(!has_remaining(ptr, end, W ? 2 : 1))return false;
+          u16 src = W ? read_u16(&ptr) : read_u8(&ptr);
+
+          printf("MOV %s, 0x%0*X\n", dest, W ? 4 : 2, src);
+
+        } else return false;
+
+      } break;
+      case 0b11: {
+
+        if(masked_equal(*ptr, 0b110000, 0b000011)) {
+
+          read_u8(&ptr);
+          printf("RET\n");
+        
+        } else if(masked_equal(*ptr, 0b110000, 0b001011)) {
+
+          read_u8(&ptr);
+          printf("RETF\n");
+
+        } else if((*ptr & 0b111110) == 000100) {
+
+          auto inst = (*ptr >> 0) & 0b1 ? "LDS" : "LES";
+          read_u8(&ptr);
+          if(!decode_2__ii__rg__rm(inst, &ptr, end, 1, 2))return false;
+
+        } else if(masked_equal(*ptr, 0b111110, 0b000110)) {
+
+          if(!decode_2___w__im__rm("MOV", &ptr, end))return false;
+
+        } else if(masked_equal(*ptr, 0b111111, 0b001010)) {
+
+          read_u8(&ptr);
+          u16 data = read_u16(&ptr);
+          printf("RETF 0x%04X\n", data);
+
+        } else if(masked_equal(*ptr, 0b111111, 0b000010)) {
+
+          read_u8(&ptr);
+          u16 data = read_u16(&ptr);
+          printf("RET 0x%04X\n", data);
+        
+        } else if(masked_equal(*ptr, 0b111111, 0b001100)) {
+          read_u8(&ptr);
+          printf("INT 3\n");
+        
+        } else if(masked_equal(*ptr, 0b111111, 0b001101)) {
+
+          read_u8(&ptr);
+          u8 type = read_u8(&ptr);
+          printf("INT %u\n", type);
+        
+        } else if(masked_equal(*ptr, 0b111111, 0b001110)) {
+
+          read_u8(&ptr);
+          printf("INTO\n");
+        
+        } else if(masked_equal(*ptr, 0b111111, 0b001111)) {
+
+          read_u8(&ptr);
+          printf("IRET\n");
+        
+        } else if(masked_equal(*ptr, 0b111100, 0b010000)) {
+
+          u8 V = (*ptr >> 1) & 0b1;
+          u8 W = (*ptr >> 0) & 0b1;
+          read_u8(&ptr);
+
+          if(!has_remaining(ptr, end, 1))return false;
+
+          auto sb = decode_2nd_byte(*ptr);
+          read_u8(&ptr);
+
+          char decoded_rm[256] = "";
+          if(!decode_rm(&ptr, end, W, sb.MOD, sb.RM, decoded_rm))return false;
+
+          char *shift = V ? "CL" : "1";
+
+          char *inst[] = {"ROL", "ROR", "RCL", "RCR", "SHL", "SHR", "", "SAR"};
+
+          printf("%s %s, %s\n", inst[sb.OP], decoded_rm, shift);
+
+        } else if(masked_equal(*ptr, 0b111111, 0b010100)) {
+          
+          read_u8(&ptr);
+          printf("AAM\n");
+
+        } else if(masked_equal(*ptr, 0b111111, 0b010101)) {
+
+          read_u8(&ptr);
+          printf("AAD\n");
+
+        } else if(masked_equal(*ptr, 0b111111, 0b010111)) {
+
+          read_u8(&ptr);
+          printf("XLAT\n");
+
+        } else if(masked_equal(*ptr, 0b111000, 0b011000)) {
+
+          auto XXX = (*ptr >> 0) & 0b111;
+          read_u8(&ptr);
+
+          if(!has_remaining(ptr, end, 1))return false;
+
+          auto second = decode_2nd_byte(*ptr);
+          read_u8(&ptr);
+
+          char decoded_rm[256];
+          decode_rm(&ptr, end, 0, second.MOD, second.RM, decoded_rm);
+
+          auto opcode = (second.YYY << 3) | XXX;
+          printf("ESC 0x%X, %s\n", opcode, decoded_rm);
+
+        } else if(masked_equal(*ptr, 0b111100, 0b100000)) {
+          auto INST = (*ptr >> 0) & 0b11;
+          read_u8(&ptr);
+
+          if(!has_remaining(ptr, end, 1))return false;
+
+          auto offset = read_s8(&ptr);
+          char *inst[] = {"LOOPNZ", "LOOPZ", "LOOP", "JCXZ"};
+          printf("%s %d\n", inst[INST], offset);
+
+        } else if(masked_equal(*ptr, 0b111100, 0b100100)) {
+          auto W = (*ptr >> 0) & 0b1;
+          auto D = (*ptr >> 1) & 0b1;
+          read_u8(&ptr);
+
+          if(!has_remaining(ptr, end, 1))return false;
+          auto port = read_u8(&ptr);
+          char port_str[256];
+          sprintf(port_str, "%d", port);
+
+          auto data_reg = W ? "AX":"AL";
+
+          auto inst = D ? "OUT" : "IN";
+
+          auto a = !D ? data_reg : port_str;
+          auto b = !D ? port_str : data_reg;
+
+          printf("%s %s, %s\n", inst, a, b);
+        } else if(masked_equal(*ptr, 0b111100, 0b101100)) {
+          auto W = (*ptr >> 0) & 0b1;
+          auto D = (*ptr >> 1) & 0b1;
+          read_u8(&ptr);
+
+          auto inst = D ? "OUT" : "IN";
+
+          auto data_reg = W ? "AX":"AL";
+
+          auto a = !D ? data_reg : "DX";
+          auto b = !D ? "DX" : data_reg;
+
+          printf("%s %s, %s\n", inst, a, b);
+
+        } else if(masked_equal(*ptr, 0b111111, 0b101000)) {
+          read_u8(&ptr);
+          if(!has_remaining(ptr, end, 1))return false;
+
+          auto ip_inc = read_s16(&ptr);
+
+          printf("CALL %d\n", ip_inc);
+
+        } else if(masked_equal(*ptr, 0b111111, 0b101000)) {
+          read_u8(&ptr);
+          if(!has_remaining(ptr, end, 1))return false;
+
+          auto ip_inc = read_s16(&ptr);
+
+          printf("JMP %d\n", ip_inc);
+
+        } else if(masked_equal(*ptr, 0b111111, 0b110000)) {
+          read_u8(&ptr);
+          printf("LOCK ");
+
+        } else if(masked_equal(*ptr, 0b111110, 0b110010)) {
+          auto Z = (*ptr >> 0) & 0b1;
+          read_u8(&ptr);
+
+          printf("REP%s ", Z ? "" : "NZ");
+
+        } else if(masked_equal(*ptr, 0b111111, 0b110100)) {
+          read_u8(&ptr);
+          printf("HLT\n");
+
+        } else if(masked_equal(*ptr, 0b111111, 0b110101)) {
+          read_u8(&ptr);
+          printf("CMC\n");
+
+        } else if(masked_equal(*ptr, 0b111110, 0b110110)) {
+          auto W = (*ptr >> 0) & 0b1;
+          read_u8(&ptr);
+
+          if(!has_remaining(ptr, end, 1))return false;
+
+          auto IDX = (*ptr >> 3) & 0b111;
+
+          char *inst[] = {
+            "TEST", "", "NOT", "NEG", "MUL", "IMUL", "DIV", "IDIV"
+          };
+
+          if(!decode_1__i__rm(inst[IDX], &ptr, end, W))return false;
+
+        } else if(masked_equal(*ptr, 0b111100, 0b111000)) {
+          auto IDX = (*ptr >> 0) & 0b11;
+          read_u8(&ptr);
+
+          char *inst[] = {"CLC", "STC", "CLI", "STI"};
+
+          printf("%s\n", inst[IDX]);
+
+        } else if(masked_equal(*ptr, 0b111110, 0b111100)) {
+          auto IDX = (*ptr >> 0) & 0b1;
+          read_u8(&ptr);
+
+          char *inst = IDX == 0 ? "CLD" : "STD";
+
+          printf("%s\n", inst);
+
+        } else if(masked_equal(*ptr, 0b111111, 0b111110)) {
+          read_u8(&ptr);
+
+          if(!has_remaining(ptr, end, 1))return false;
+
+          auto IDX = (*ptr >> 3) & 0b111;
+
+          char *inst[] = {
+            "INC", "DEC"
+          };
+
+          if(IDX == 0b000 || IDX == 0b001) {
+
+            if(!decode_1__i__rm(inst[IDX], &ptr, end, 0))return false;
+
+          } else return false;
+
+        } else if(masked_equal(*ptr, 0b111111, 0b111111)) {
+          read_u8(&ptr);
+
+          if(!has_remaining(ptr, end, 1))return false;
+
+          auto IDX = (*ptr >> 3) & 0b111;
+
+          if(IDX == 0b000) {
+
+            if(!decode_1__i__rm("INC", &ptr, end, 1))return false;
+
+          } else if(IDX == 0b001) {
+
+            if(!decode_1__i__rm("DEC", &ptr, end, 1))return false;
+
+          } else if(IDX == 0b010) {
+
+            if(!decode_1__i__rm("CALL", &ptr, end, 1))return false;
+
+          } else if(IDX == 0b011) {
+
+            if(!decode_1__i__rm("CALL", &ptr, end, 1))return false;
+
+          } else if(IDX == 0b100) {
+
+            if(!decode_1__i__rm("JMP", &ptr, end, 1))return false;
+
+          } else if(IDX == 0b101) {
+
+            if(!decode_1__i__rm("JMP", &ptr, end, 1))return false;
+
+          } else if(IDX == 0b110) {
+
+            if(!decode_1__i__rm("PUSH", &ptr, end, 1))return false;
+
+          } else return false;
+
+        } else return false;
+      } break;
       
-      printf("MOV %s, %s\n", dest, src);
-    } else if((*ptr & 0b11111101) == 0b10001100) {
-      auto D = (*ptr >> 1) & 0b1;
-      read_u8(&ptr);
-      
-      if(!has_remaining(ptr, end, 1))return false;
-      
-      auto MOD = (*ptr >> 6) & 0b11;
-      auto SR = (*ptr >> 3) & 0b11;
-      auto RM = (*ptr >> 0) & 0b111;
-      read_u8(&ptr);
-
-      auto seg_reg = decode_SR(SR);
-
-      char decoded_mod[256] = "";
-      if(!decode_MOD(&ptr, end, 1, MOD, RM, decoded_mod))return false;
-
-      auto src = D ? decoded_mod : seg_reg;
-      auto dest = D ? seg_reg : decoded_mod;
-
-      printf("MOV %s, %s\n", dest, src);
-    } else if((*ptr & 0b11111111) == 0b11111111) {
-      read_u8(&ptr);
-
-      if(!has_remaining(ptr, end, 1))return false;
-
-      if((*ptr & 0b00111000) == 0b00110000) {
-        if(!decode_1__i__rm("PUSH", &ptr, end, 1))return false;
-      } else return false;
-
-    } else if((*ptr & 0b11111000) == 0b01010000) {
-      if(!decode_1__rg("PUSH", &ptr, end))return false;
-    } else if((*ptr & 0b11100111) == 0b00000110) {
-      auto SEG_REG = (*ptr >> 3) & 0b11;
-      read_u8(&ptr);
-
-      auto seg_reg = decode_SR(SEG_REG);
-
-      printf("PUSH %s\n", seg_reg);
-    } else if((*ptr & 0b11111000) == 0b01011000) {
-      auto REG = (*ptr >> 0) & 0b111;
-      read_u8(&ptr);
-
-      auto dest = decode_REG(1, REG);
-
-      printf("POP %s\n", dest);
-    } else if((*ptr & 0b11100111) == 0b00000111) {
-      auto SEG_REG = (*ptr >> 3) & 0b11;
-      read_u8(&ptr);
-
-      auto seg_reg = decode_SR(SEG_REG);
-
-      printf("POP %s\n", seg_reg);
-    } else if((*ptr & 0b11111111) == 0b10001111) {
-      read_u8(&ptr);
-
-      if(!has_remaining(ptr, end, 1))return false;
-
-      if((*ptr & 0b00111000) == 0b00000000) {
-        if(!decode_1__i__rm("POP", &ptr, end, 1))return false;
-      } else return false;
-
-    } else if((*ptr & 0b11111110) == 0b10000110) {
-      if(!decode_2___w__rg__rm("XCHG", &ptr, end))return false;
-    } else if((*ptr & 0b11111000) == 0b10010000) {
-      auto REG = (*ptr >> 0) & 0b111;
-      read_u8(&ptr);
-
-      auto b = decode_REG(1, REG);
-
-      printf("XCHG AX, %s\n", b);
-
-    } else if((*ptr & 0b11111100) == 0b00000000) {
-      if(!decode_2__dw__rg__rm("ADD", &ptr, end))return false;
-    } else if((*ptr & 0b11111100) == 0b00010000) {
-      if(!decode_2__dw__rg__rm("ADC", &ptr, end))return false;
-    } else if((*ptr & 0b11111110) == 0b00000100) {
-      if(!decode_2___w__im__ac("ADD", &ptr, end))return false;
-    } else if((*ptr & 0b11111110) == 0b00010100) {
-      if(!decode_2___w__im__ac("ADC", &ptr, end))return false;
-    } else if((*ptr & 0b11111100) == 0b10000000) {
-      if(!has_remaining(ptr, end, 2))return false;
-
-      if(masked_equal(ptr[1], 0b00111000, 0b00000000)) {
-        if(!decode_2__sw__im__rm("ADD", &ptr, end))return false;
-      } else if(masked_equal(ptr[1], 0b00111000, 0b00010000)) {
-        if(!decode_2__sw__im__rm("ADC", &ptr, end))return false;
-      } else return false;
-
-    } else if((*ptr & 0b11111100) == 0b11100100) {
-      auto W = (*ptr >> 0) & 0b1;
-      auto D = (*ptr >> 1) & 0b1;
-      read_u8(&ptr);
-
-      if(!has_remaining(ptr, end, 1))return false;
-      auto port = read_u8(&ptr);
-      char port_str[256];
-      sprintf(port_str, "%d", port);
-
-      auto data_reg = W ? "AX":"AL";
-
-      auto inst = D ? "OUT" : "IN";
-
-      auto a = !D ? data_reg : port_str;
-      auto b = !D ? port_str : data_reg;
-
-      printf("%s %s, %s\n", inst, a, b);
-    } else if((*ptr & 0b11111100) == 0b11101100) {
-      auto W = (*ptr >> 0) & 0b1;
-      auto D = (*ptr >> 1) & 0b1;
-      read_u8(&ptr);
-
-      auto inst = D ? "OUT" : "IN";
-
-      auto data_reg = W ? "AX":"AL";
-
-      auto a = !D ? data_reg : "DX";
-      auto b = !D ? "DX" : data_reg;
-
-      printf("%s %s, %s\n", inst, a, b);
-    } else if((*ptr & 0b11111111) == 0b11010111) {
-      read_u8(&ptr);
-      printf("XLAT\n");
-    } else if((*ptr & 0b11111111) == 0b10001101) {
-      read_u8(&ptr);
-      if(!decode_2__ii__rg__rm("LEA", &ptr, end, 1, 1))return false;
-    } else if((*ptr & 0b11111110) == 0b11000100) {
-      auto inst = (*ptr >> 0) & 0b1 ? "LDS" : "LES";
-      read_u8(&ptr);
-      if(!decode_2__ii__rg__rm(inst, &ptr, end, 1, 2))return false;
-    } else if((*ptr & 0b11111110) == 0b10011110) {
-      auto inst = (*ptr >> 0) & 0b1 ? "LAHF" : "SAHF";
-      read_u8(&ptr);
-      printf("%s\n", inst);
-    } else if((*ptr & 0b11111110) == 0b10011100) {
-      auto inst = (*ptr >> 0) & 0b1 ? "POPF" : "PUSHF";
-      read_u8(&ptr);
-      printf("%s\n", inst);
-    } else if(masked_equal(*ptr, 0b11111111, 0b00110111)) {
-      read_u8(&ptr);
-      printf("AAA\n");
-    } else if(masked_equal(*ptr, 0b11111111, 0b00100111)) {
-      read_u8(&ptr);
-      printf("DAA\n");
-    } else if(masked_equal(*ptr, 0b11111111, 0b00111111)) {
-      read_u8(&ptr);
-      printf("DAA\n");
-    } else if(masked_equal(*ptr, 0b11111111, 0b00101111)) {
-      read_u8(&ptr);
-      printf("DAS\n");
-    } else if(masked_equal(*ptr, 0b11111111, 0b10011000)) {
-      read_u8(&ptr);
-      printf("CBW\n");
-    } else if(masked_equal(*ptr, 0b11111111, 0b10011001)) {
-      read_u8(&ptr);
-      printf("CWD\n");
-    }
-    else {
-      fprintf(stderr, "Error: Unknown byte %02x\n", *ptr);
-      return false;
+      default: return false;
     }
   }
 
