@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdarg.h>
-#include "file_reader.h"
+#include "../shared/file_reader.h"
 #include "meta.cpp"
 
 int err_print(const char *format, ...){

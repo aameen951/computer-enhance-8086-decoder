@@ -1,3 +1,6 @@
 .activity-time
+
 /json/build
 /8086/build
+/haversine/build
+/profiler/build

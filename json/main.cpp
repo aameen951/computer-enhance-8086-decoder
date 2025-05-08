@@ -1,7 +1,7 @@
-#include "my_std.h"
-#include "file_reader.h"
+#include "../shared/my_std.h"
+#include "../shared/file_reader.h"
 #include "json.h"
-#include "high_res_timer.h"
+#include "../shared/high_res_timer.h"
 
 #include <stdio.h>
 

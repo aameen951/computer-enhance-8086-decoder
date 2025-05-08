@@ -1,7 +1,7 @@
 #ifndef JSON_DUMP_H_
 #define JSON_DUMP_H_
 
-#include "json.h"
+#include "../json/json.h"
 #include <stdio.h>
 
 

@@ -1,14 +1,14 @@
-#include "my_std.h"
+#include "../shared/my_std.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 
-#include "json.h"
-#include "my_string.h"
+#include "../json/json.h"
+#include "../shared/my_string.h"
 #include "json_dump.h"
-#include "file_reader.h"
-#include "high_res_timer.h"
+#include "../shared/file_reader.h"
+#include "../shared/high_res_timer.h"
 
 
 struct Pair {

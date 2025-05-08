@@ -1,6 +1,6 @@
 #include <stdio.h>
-#include "my_std.h"
-#include "file_reader.h"
+#include "../shared/my_std.h"
+#include "../shared/file_reader.h"
 
 char *JCC_INST[] = {
   "JO", "JNO", "JB", "JAE", "JE", "JNE", "JBE", "JA",
