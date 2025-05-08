@@ -30,7 +30,7 @@ b32 deserialize_json(JsonElement *root){
   }
 
   JsonElement *pairs = null;
-  for(auto m = root->object->first; m; m = m->next) {
+   for(auto m = root->object->first; m; m = m->next) {
     if(str_equal(str(m->name.data, m->name.len), str("pairs"))) {
       pairs = m->value;
     }
