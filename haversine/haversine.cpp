@@ -5,9 +5,8 @@
 #include <math.h>
 
 #include "../json/json.h"
-#include "../shared/my_string.h"
 #include "json_dump.h"
-#include "../shared/file_reader.h"
+#include "../shared/file.h"
 #include "../shared/high_res_timer.h"
 
 
@@ -31,7 +30,7 @@ b32 deserialize_json(JsonElement *root){
 
   JsonElement *pairs = null;
    for(auto m = root->object->first; m; m = m->next) {
-    if(str_equal(str(m->name.data, m->name.len), str("pairs"))) {
+    if(str_equal(String{(char*)m->name.data, m->name.len}, STR("pairs"))) {
       pairs = m->value;
     }
   }
@@ -68,29 +67,30 @@ b32 deserialize_json(JsonElement *root){
     }
 
     for(auto m = p->object->first; m; m = m->next) {
+      auto name_str = String{(char *)m->name.data, m->name.len};
 
-      if(str_equal(str(m->name.data, m->name.len), str("x0"))) {
+      if(str_equal(name_str, STR("x0"))) {
         if(m->value->kind != JSON_ELEMENT_NUMBER) {
           printf("Error: x0 for pair %d is not a number\n", i+1);
           return false;
         }
         x0 = m->value->number;
         found++;
-      } else if(str_equal(str(m->name.data, m->name.len), str("y0"))) {
+      } else if(str_equal(name_str, STR("y0"))) {
         if(m->value->kind != JSON_ELEMENT_NUMBER) {
           printf("Error: y0 for pair %d is not a number\n", i+1);
           return false;
         }
         y0 = m->value->number;
         found++;
-      } else if(str_equal(str(m->name.data, m->name.len), str("x1"))) {
+      } else if(str_equal(name_str, STR("x1"))) {
         if(m->value->kind != JSON_ELEMENT_NUMBER) {
           printf("Error: x1 for pair %d is not a number\n", i+1);
           return false;
         }
         x1 = m->value->number;
         found++;
-      } else if(str_equal(str(m->name.data, m->name.len), str("y1"))) {
+      } else if(str_equal(name_str, STR("y1"))) {
         if(m->value->kind != JSON_ELEMENT_NUMBER) {
           printf("Error: y1 for pair %d is not a number\n", i+1);
           return false;

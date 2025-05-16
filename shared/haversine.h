@@ -4,6 +4,8 @@
 #include "my_std.h"
 #include <math.h>
 
+#define EARTH_RADIUS 6371.0 // Earth radius in km
+
 static inline f64 to_radians(f64 degrees) {
   return (PI / 180.0) * degrees;
 }

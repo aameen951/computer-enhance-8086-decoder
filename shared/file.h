@@ -1,5 +1,5 @@
-#ifndef FILE_READER_H_
-#define FILE_READER_H_
+#ifndef FILE_H_
+#define FILE_H_
 
 #include "my_std.h"
 #include <stdio.h>

@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define EARTH_RADIUS 6371.0 // Earth radius in km
 #include "../shared/haversine.h"
 
 #include "../shared/rng.h"
@@ -40,9 +39,14 @@ int main(int argc, char **argv) {
 
       auto distance = haversine(x0, y0, x1, y1, EARTH_RADIUS);
       sum += distance;
+
+      fwrite(&x0, sizeof(f64), 1, af);
+      fwrite(&y0, sizeof(f64), 1, af);
+      fwrite(&x1, sizeof(f64), 1, af);
+      fwrite(&y1, sizeof(f64), 1, af);
       fwrite(&distance, sizeof(f64), 1, af);
 
-      fprintf(f, "    {\"x0\":%.16f, \"y0\":%.16f, \"x1\":%.16f, \"y1\":%.16f}%s\n", 
+      fprintf(f, "    {\"x0\":%.30f, \"y0\":%.30f, \"x1\":%.30f, \"y1\":%.30f}%s\n", 
         x0, y0, x1, y1, i+1 == num_of_coords ? "" : ",");
     }
     fprintf(f, "]}\n");
@@ -53,8 +57,6 @@ int main(int argc, char **argv) {
     printf("Average distance: %.16f\n", average);
     fclose(f);
   }
-
-
 
   return 0;
 }

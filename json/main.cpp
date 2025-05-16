@@ -1,5 +1,5 @@
 #include "../shared/my_std.h"
-#include "../shared/file_reader.h"
+#include "../shared/file.h"
 #include "json.h"
 #include "../shared/high_res_timer.h"
 
