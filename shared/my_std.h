@@ -50,6 +50,11 @@ typedef double f64;
 #define array_count(arr) (sizeof((arr))/sizeof((arr)[0]))
 #define arr_count(arr)   (sizeof((arr))/sizeof((arr)[0]))
 
+#define EXPAND_(a) a 
+#define EXPAND(a) EXPAND_(a)
+#define CONCAT_(a, b) a##b
+#define CONCAT(a, b) CONCAT_(a, b)
+
 #define PI 3.14159265358979323846264338327950288419716939937510
 
 

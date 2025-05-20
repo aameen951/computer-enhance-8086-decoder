@@ -10,7 +10,10 @@ if not exist "%BUILD_DIR%" MKDIR "%BUILD_DIR%"
 
 pushd "%BUILD_DIR%"
 
-"%VC64_CL%" /nologo /Zi /O2 "%PROJECT_DIR%\main.cpp"
+"%VC64_CL%" /c /nologo /Zi /O2 "%PROJECT_DIR%\main.cpp"
+"%VC64_CL%" /c /nologo /Zi /O2 /TP /D"PERF_PROFILER_IMPLEMENTATION" "%PROJECT_DIR%\..\shared\perf_profiler.h"
+
+"%VC64_LINK%" /nologo /DEBUG /OUT:main.exe main.obj perf_profiler.obj 
 
 popd
 
