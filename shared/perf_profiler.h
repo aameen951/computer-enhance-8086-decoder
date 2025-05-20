@@ -108,18 +108,22 @@ void _PerfProfilerInitialize(){
 void _PerfProfilerFinalize(){
   _perf_profiler_block_end(&_perf_profiler_global_state.total);
   auto total_time = _perf_profiler_global_state.points[_PERF_PROFILER_TOTAL_POINT_ID].inc_time;
-  printf("Perf Profiler Results:\n");
-  printf("=========================\n");
-  printf("%-30s  %-11s  %-6s       %-11s  %-6s       %s\n", "Name", "Time Inc.", "%", "Time Exc.", "%", "Hits");
+  printf("\n                     Perf Profiler Results:\n");
+  printf(  "                     ======================\n");
+  printf("%-30s  %11s   %6s      %11s   %6s      %11s  %14s  %14s\n", "Name", "Time Inc.", "%", "Time Exc.", "%", "Hits", "Per Hit Inc.", "Per Hit Exc.");
+  printf("===============================================================================================================================\n");
 
   for(int i = 0; i < PerfProfilerGlobalState::MAX_POINTS; i++){
     auto point = _perf_profiler_global_state.points[i];
     if(point.name){
       auto inc_percent = (f64)point.inc_time / (f64)total_time * 100.0;
       auto exc_percent = (f64)point.exc_time / (f64)total_time * 100.0;
-      printf("%-30s  %-11llu  %%%-6.2f      %-11llu  %%%-6.2f      %llu\n", point.name, point.inc_time, inc_percent, point.exc_time, exc_percent, point.hits);
+      auto per_hit_inc = point.hits ? (f64)point.inc_time / (f64)point.hits : 0;
+      auto per_hit_exc = point.hits ? (f64)point.exc_time / (f64)point.hits : 0;
+      printf("%-30s  %11llu  %6.2f%%      %11llu  %6.2f%%      %11llu  %14.1f  %14.1f\n", point.name, point.inc_time, inc_percent, point.exc_time, exc_percent, point.hits, per_hit_inc, per_hit_exc);
     }
   }
+  printf("===============================================================================================================================\n\n");
 }
 #endif // PERF_PROFILER_IMPLEMENTATION
 

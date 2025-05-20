@@ -5,7 +5,7 @@
 #include <math.h>
 
 #include "../shared/perf_metrics.h"
-#define PERF_PROFILER_DISABLE 1
+// #define PERF_PROFILER_DISABLE 1
 #include "../shared/perf_profiler.h"
 
 
@@ -48,13 +48,11 @@ int main(int argc, char **argv){
   u64 count = 100000000;
   f64 y = 0;
   {
-    PerfProfilerBlock("Shit");
+    PerfProfilerBlock("Profiler Overhead");
     for(u64 i = 0; i < count; i++){
-      PerfProfilerBlock("Outer Loop");
-      // do nothing
-      y += sqrt(y) + pow(count / 3432.0 * i + 1561.0, 1.1);
+      // PerfProfilerBlock("Empty Loop Body");
     }
-    // PerfProfilerBlockSetHitCount(count);
+    PerfProfilerBlockSetHitCount(count);
   }
   printf("y = %f\n", y);
 
