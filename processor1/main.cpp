@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <ctype.h>
 
+#define PERF_PROFILER_IMPLEMENTATION
+#include "../shared/perf_profiler.h"
+
 struct JsonValue;
 enum JsonValueType {
   JSON_NULL,
@@ -44,9 +47,16 @@ void json_free(JsonValue *value);
 //////////////////////////////////////////////////
 
 void *_json_alloc(um size) {
+  PerfProfilerFunction();
   return malloc(size);
 }
+void _json_dealloc(void *ptr) {
+  PerfProfilerFunction();
+  free(ptr);
+}
+
 void _json_skip_ws(u8 **ptr, u8 *end) {
+  PerfProfilerFunction();
   while(*ptr < end) {
     if(**ptr == ' ' || **ptr == '\n' || **ptr == '\r' || **ptr == '\t') {
       (*ptr)++;
@@ -61,6 +71,7 @@ void _json_skip_ws(u8 **ptr, u8 *end) {
 JsonValue *_json_parse_value(u8 **ptr, u8 *end);
 
 um compute_codepoint_utf8_len(u32 codepoint){
+  PerfProfilerFunction();
   if(codepoint <= 0x7F) return 1;
   if(codepoint <= 0x7FF) return 2;
   if(codepoint <= 0xFFFF) return 3;
@@ -72,6 +83,7 @@ um compute_codepoint_utf8_len(u32 codepoint){
 #define IS_HEX_DIGIT(c) ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
 #define HEX_TO_DIGIT(c) (u8)(( ((c)>='0'&&(c)<='9') ? (c)-'0' : ((c)>='a'&&(c)<='f') ? (c)-'a'+10 : (c)-'A'+10 ))
 bool is_valid_u_escape(u8 *ptr, u8 *end){
+  PerfProfilerFunction();
   bool result = false;
 
   if(ptr + 5 < end) {
@@ -96,6 +108,7 @@ bool is_valid_u_escape(u8 *ptr, u8 *end){
   return result;
 }
 u16 decode_u_escape(u8 *ptr, u8 *end){
+  PerfProfilerFunction();
   assert(is_valid_u_escape(ptr, end));
   auto c0 = ptr[2];
   auto c1 = ptr[3];
@@ -123,6 +136,7 @@ bool is_valid_low_surrogate(u16 codepoint) {
 #undef HEX_TO_DIGIT
 
 bool _json_validate_u_escape(u8 **ptr_p, u8 *end, um *str_len_p) {
+  PerfProfilerFunction();
   /*
   NOTE: The specification of JSON seems very dump regarding
     \uxxxx escape sequences. It is pretending to be unicode codepoint
@@ -165,6 +179,7 @@ bool _json_validate_u_escape(u8 **ptr_p, u8 *end, um *str_len_p) {
   return result;
 }
 void codepoint_to_utf8(u32 codepoint, u8 **out_p) {
+  PerfProfilerFunction();
   auto out = *out_p;
   if(codepoint <= 0x7F) {
     *out++ = (u8)codepoint;
@@ -184,6 +199,7 @@ void codepoint_to_utf8(u32 codepoint, u8 **out_p) {
   *out_p = out;
 }
 void _json_decode_u_escape(u8 **ptr_p, u8 *end, u8 **out_p) {
+  PerfProfilerFunction();
   auto ptr = *ptr_p;
 
   auto codepoint = decode_u_escape(ptr, end);
@@ -206,6 +222,7 @@ void _json_decode_u_escape(u8 **ptr_p, u8 *end, u8 **out_p) {
 #undef IS_HEX_DIGIT
 
 bool _json_parse_raw_string(u8 **ptr_p, u8 *end, String *out) {
+  PerfProfilerFunction();
   auto result = false;
   auto ptr = *ptr_p;
   assert(ptr < end && *ptr == '"');
@@ -282,6 +299,7 @@ bool _json_parse_raw_string(u8 **ptr_p, u8 *end, String *out) {
   return result;
 }
 JsonValue *_json_parse_string(u8 **ptr_p, u8 *end) {
+  PerfProfilerFunction();
   auto result = (JsonValue *)null;
 
   auto ptr = *ptr_p;
@@ -299,12 +317,13 @@ JsonValue *_json_parse_string(u8 **ptr_p, u8 *end) {
 
   error:;
   if(!result) {
-    if(str.data)free(str.data);
+    if(str.data)_json_dealloc(str.data);
   }
   *ptr_p = ptr;
   return result;
 }
 JsonValue *_json_parse_object(u8 **ptr_p, u8 *end) {
+  PerfProfilerFunction();
   auto result = (JsonValue *)null;
   auto ptr = *ptr_p;
   assert(ptr < end && *ptr == '{');
@@ -329,7 +348,7 @@ JsonValue *_json_parse_object(u8 **ptr_p, u8 *end) {
 
     auto value = _json_parse_value(&ptr, end);
     if(!value) {
-      if(key.data)free(key.data);
+      if(key.data)_json_dealloc(key.data);
       goto error;
     }
 
@@ -363,6 +382,7 @@ JsonValue *_json_parse_object(u8 **ptr_p, u8 *end) {
   return result;
 }
 JsonValue *_json_parse_array(u8 **ptr_p, u8 *end) {
+  PerfProfilerFunction();
   auto result = (JsonValue *)null;
 
   auto ptr = *ptr_p;
@@ -409,6 +429,7 @@ JsonValue *_json_parse_array(u8 **ptr_p, u8 *end) {
   return result;
 }
 JsonValue *_json_parse_number(u8 **ptr_p, u8 *end) {
+  PerfProfilerFunction();
   auto result = (JsonValue *)null;
 
   auto ptr = *ptr_p;
@@ -463,6 +484,7 @@ JsonValue *_json_parse_number(u8 **ptr_p, u8 *end) {
   return result;
 }
 bool _json_parse_identifier(u8 **ptr, u8 *end, char *identifier, um identifier_len) {
+  PerfProfilerFunction();
   auto id_start = *ptr;
   while(*ptr < end && (**ptr >='a' && **ptr <= 'z')) (*ptr)++;
   auto id_end = *ptr;
@@ -473,6 +495,7 @@ bool _json_parse_identifier(u8 **ptr, u8 *end, char *identifier, um identifier_l
   return cmp == 0;
 }
 JsonValue *_json_parse_value(u8 **ptr, u8 *end) {
+  PerfProfilerFunction();
   auto result = (JsonValue *)null;
   _json_skip_ws(ptr, end);
   if(*ptr >= end) return null;
@@ -517,8 +540,42 @@ JsonValue *_json_parse_value(u8 **ptr, u8 *end) {
 }
 
 void json_free(JsonValue *value) {
+  PerfProfilerFunction();
+  if(value) {
+    switch(value->type) {
+      case JSON_NULL: {} break;
+      case JSON_NUMBER: {} break;
+      case JSON_BOOLEAN: {} break;
+      case JSON_STRING: {
+        if(value->string.data) {
+          _json_dealloc(value->string.data);
+        }
+      } break;
+      case JSON_ARRAY: {
+        for(um i=0; i<value->array.elements.length; i++) {
+          json_free(value->array.elements[i]);
+        }
+        arr_free(&value->array.elements);
+      } break;
+      case JSON_OBJECT: {
+        for(um i=0; i<value->object.entries.length; i++) {
+          auto entry = value->object.entries[i];
+          if(entry.key.data) {
+            _json_dealloc(entry.key.data);
+          }
+          json_free(entry.value);
+        }
+        arr_free(&value->object.entries);
+      } break;
+      default: {
+        assert(false);
+      } break;
+    }
+    _json_dealloc(value);
+  }
 }
 JsonResult json_parse(u8 *data, um size) {
+  PerfProfilerFunction();
   auto ptr = data, end = data + size;
   auto root = _json_parse_value(&ptr, end);
   if(!root) {
@@ -532,6 +589,7 @@ JsonResult json_parse(u8 *data, um size) {
   return result;
 }
 JsonValue *json_object_get_key(JsonValueObject obj, char *key){
+  PerfProfilerFunction();
   for(um i=0; i<obj.entries.length; i++) {
     auto entry = obj.entries[i];
     if(entry.key.length == strlen(key) && memcmp(entry.key.data, key, entry.key.length) == 0) {
@@ -542,20 +600,28 @@ JsonValue *json_object_get_key(JsonValueObject obj, char *key){
 }
 
 int main(int argc, char **argv){
+  int result = 0;
+  PerfProfilerInitialize();
 
   // Usage: main <input.json> <answers.f64>
   if(argc < 2) {
     printf(" Usage: %s <input.json>\n", argv[0]);
     printf("        %s <input.json> <answers.f64>\n", argv[0]);
-    return 1;
+    result = 1;
+    goto end;
   }
   auto input_file_name = argv[1];
   auto answers_file_name = argc == 3 ? argv[2] : null;
 
-  auto input = file_read_content_to_memory(input_file_name);
-  if(!input.ok) {
-    printf("Error: could not read input file %s\n", input_file_name);
-    return 1;
+  FileReadResult input;
+  {
+    PerfProfilerBlock("Read input file");
+    input = file_read_content_to_memory(input_file_name);
+    if(!input.ok) {
+      printf("Error: could not read input file %s\n", input_file_name);
+      result = 1;
+      goto end;
+    }
   }
 
   f64 *answers = null;
@@ -563,14 +629,17 @@ int main(int argc, char **argv){
   f64 answers_sum = 0;
 
   if(answers_file_name) {
+    PerfProfilerBlock("Read answers file");
     auto answers_res = file_read_content_to_memory(answers_file_name);
     if(!answers_res.ok) {
       printf("Error: could not read answers file %s\n", answers_file_name);
-      return 1;
+      result = 1;
+      goto end;
     }
     if(answers_res.size % sizeof(f64) != 0) {
       printf("Error: answers file size is not a multiple of %zu\n", sizeof(f64));
-      return 1;
+      result = 1;
+      goto end;
     }
     auto double_count = answers_res.size / sizeof(f64);
     double_count--;
@@ -587,78 +656,90 @@ int main(int argc, char **argv){
   auto parse_res = json_parse(input.data, input.size);
   if(!parse_res.ok) {
     printf("Error: invalid json when parsing input file %s\n", input_file_name);
-    return 1;
+    result = 1;
+    goto end;
   }
 
   if(parse_res.root->type != JSON_OBJECT) {
     printf("Error: json root must be an object\n");
-    return 1;
+    result = 1;
+    goto end;
   }
   auto root = parse_res.root;
 
   auto pairs = json_object_get_key(root->object, "pairs");
   if(!pairs) {
     printf("Error: json root object must have a 'pairs' key\n");
-    return 1;
+    result = 1;
+    goto end;
   }
   if(pairs->type != JSON_ARRAY) {
     printf("Error: json root object 'pairs' key must be an array\n");
-    return 1;
+    result = 1;
+    goto end;
   }
   auto pairs_array = pairs->array.elements;
   if(answers && answers_count != pairs_array.length) {
     printf("Error: answers count %llu does not match pairs count %llu\n", answers_count, pairs_array.length);
-    return 1;
+    result = 1;
+    goto end;
   }
 
   auto sum = 0.0;
-  for(um i=0; i<pairs_array.length; i++) {
-    auto pair = pairs_array[i];
-    if(pair->type != JSON_OBJECT) {
-      printf("Error: json root object 'pairs' key must be an array of objects\n");
-      return 1;
-    }
-    auto x0 = json_object_get_key(pair->object, "x0");
-    auto y0 = json_object_get_key(pair->object, "y0");
-    auto x1 = json_object_get_key(pair->object, "x1");
-    auto y1 = json_object_get_key(pair->object, "y1");
-    if(!x0 || !y0 || !x1 || !y1) {
-      printf("Error: json root object 'pairs' key must have 'x0', 'y0', 'x1', and 'y1' keys\n");
-      return 1;
-    }
+  {
+    PerfProfilerBlock("Haversine Loop");
+    PerfProfilerBlockSetHitCount(pairs_array.length);
+    for(um i=0; i<pairs_array.length; i++) {
+      auto pair = pairs_array[i];
+      if(pair->type != JSON_OBJECT) {
+        printf("Error: json root object 'pairs' key must be an array of objects\n");
+        result = 1;
+        goto end;
+      }
+      auto x0 = json_object_get_key(pair->object, "x0");
+      auto y0 = json_object_get_key(pair->object, "y0");
+      auto x1 = json_object_get_key(pair->object, "x1");
+      auto y1 = json_object_get_key(pair->object, "y1");
+      if(!x0 || !y0 || !x1 || !y1) {
+        printf("Error: json root object 'pairs' key must have 'x0', 'y0', 'x1', and 'y1' keys\n");
+        result = 1;
+        goto end;
+      }
 
-    if(x0->type != JSON_NUMBER || y0->type != JSON_NUMBER || x1->type != JSON_NUMBER || y1->type != JSON_NUMBER) {
-      printf("Error: json root object 'pairs' key must have 'x0', 'y0', 'x1', and 'y1' keys of type number\n");
-      return 1;
-    }
-    auto x0_value = x0->number;
-    auto y0_value = y0->number;
-    auto x1_value = x1->number;
-    auto y1_value = y1->number;
+      if(x0->type != JSON_NUMBER || y0->type != JSON_NUMBER || x1->type != JSON_NUMBER || y1->type != JSON_NUMBER) {
+        printf("Error: json root object 'pairs' key must have 'x0', 'y0', 'x1', and 'y1' keys of type number\n");
+        result = 1;
+        goto end;
+      }
+      auto x0_value = x0->number;
+      auto y0_value = y0->number;
+      auto x1_value = x1->number;
+      auto y1_value = y1->number;
 
-    auto result = haversine(x0_value, y0_value, x1_value, y1_value, EARTH_RADIUS);
-    sum += result;
+      auto result = haversine(x0_value, y0_value, x1_value, y1_value, EARTH_RADIUS);
+      sum += result;
 
-    if(answers) {
-      auto answer_x0 = answers[i*5+0];
-      auto answer_y0 = answers[i*5+1];
-      auto answer_x1 = answers[i*5+2];
-      auto answer_y1 = answers[i*5+3];
-      auto answer_hv = answers[i*5+4];
-      if(x0_value != answer_x0) {
-        printf("Warning: x0     %25.16f does not match answer %25.16f diff: %25.16f\n", x0_value, answer_x0, x0_value-answer_x0);
-      }
-      if(y0_value != answer_y0) {
-        printf("Warning: y0     %25.16f does not match answer %25.16f diff: %25.16f\n", y0_value, answer_y0, y0_value-answer_y0);
-      }
-      if(x1_value != answer_x1) {
-        printf("Warning: x1     %25.16f does not match answer %25.16f diff: %25.16f\n", x1_value, answer_x1, x1_value-answer_x1);
-      }
-      if(y1_value != answer_y1) {
-        printf("Warning: y1     %25.16f does not match answer %25.16f diff: %25.16f\n", y1_value, answer_y1, y1_value-answer_y1);
-      }
-      if(result != answer_hv) {
-        printf("Warning: result %25.16f does not match answer %25.16f diff: %25.16f\n", result, answer_hv, result-answer_hv);
+      if(answers) {
+        auto answer_x0 = answers[i*5+0];
+        auto answer_y0 = answers[i*5+1];
+        auto answer_x1 = answers[i*5+2];
+        auto answer_y1 = answers[i*5+3];
+        auto answer_hv = answers[i*5+4];
+        if(x0_value != answer_x0) {
+          printf("Warning: x0     %25.16f does not match answer %25.16f diff: %25.16f\n", x0_value, answer_x0, x0_value-answer_x0);
+        }
+        if(y0_value != answer_y0) {
+          printf("Warning: y0     %25.16f does not match answer %25.16f diff: %25.16f\n", y0_value, answer_y0, y0_value-answer_y0);
+        }
+        if(x1_value != answer_x1) {
+          printf("Warning: x1     %25.16f does not match answer %25.16f diff: %25.16f\n", x1_value, answer_x1, x1_value-answer_x1);
+        }
+        if(y1_value != answer_y1) {
+          printf("Warning: y1     %25.16f does not match answer %25.16f diff: %25.16f\n", y1_value, answer_y1, y1_value-answer_y1);
+        }
+        if(result != answer_hv) {
+          printf("Warning: result %25.16f does not match answer %25.16f diff: %25.16f\n", result, answer_hv, result-answer_hv);
+        }
       }
     }
   }
@@ -671,7 +752,10 @@ int main(int argc, char **argv){
     printf("Error: average %25.16f does not match answer %25.16f diff: %25.16f\n", average, answers_sum, average-answers_sum);
   }
 
+  json_free(root);
 
+  PerfProfilerFinalize();
 
-  return 0;
+  end:
+  return result;
 }
