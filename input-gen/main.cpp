@@ -6,13 +6,17 @@
 #include "../shared/haversine.h"
 
 #include "../shared/rng.h"
+#define PERF_PROFILER_IMPLEMENTATION
+#include "../shared/perf_profiler.h"
 
 f64 rand_f64(Jsf64RngCtx *ctx) {
+  PerfProfilerFunction();
   u64 v = jsf64_next_u64(ctx);
   return (f64)v / (f64)U64_MAX;
 }
 
 int main(int argc, char **argv) {
+  PerfProfilerInitialize();
 
   if (argc < 3) {
     printf("Usage: %s <seed> <number-of-coordinates>\n", argv[0]);
@@ -31,23 +35,37 @@ int main(int argc, char **argv) {
   if(f) {
     f64 sum = 0.0;
     fprintf(f, "{\"pairs\":[\n");
-    for(u64 i=0; i<num_of_coords; i++){
-      auto x0 = (rand_f64(&rng) * 360.0) - 180;
-      auto y0 = (rand_f64(&rng) * 180.0) - 90;
-      auto x1 = (rand_f64(&rng) * 360.0) - 180;
-      auto y1 = (rand_f64(&rng) * 180.0) - 90;
+    {
+      PerfProfilerBlock("Generate coordinates");
+      for(u64 i=0; i<num_of_coords; i++){
+        auto x0 = (rand_f64(&rng) * 360.0) - 180;
+        auto y0 = (rand_f64(&rng) * 180.0) - 90;
+        auto x1 = (rand_f64(&rng) * 360.0) - 180;
+        auto y1 = (rand_f64(&rng) * 180.0) - 90;
 
-      auto distance = haversine(x0, y0, x1, y1, EARTH_RADIUS);
-      sum += distance;
+        f64 distance = 0.0;
+        {
+          PerfProfilerBlock("Haversine");
+          distance = haversine(x0, y0, x1, y1, EARTH_RADIUS);
+          sum += distance;
+        }
 
-      fwrite(&x0, sizeof(f64), 1, af);
-      fwrite(&y0, sizeof(f64), 1, af);
-      fwrite(&x1, sizeof(f64), 1, af);
-      fwrite(&y1, sizeof(f64), 1, af);
-      fwrite(&distance, sizeof(f64), 1, af);
+        {
+          PerfProfilerBlock("Answers Write");
+          fwrite(&x0, sizeof(f64), 1, af);
+          fwrite(&y0, sizeof(f64), 1, af);
+          fwrite(&x1, sizeof(f64), 1, af);
+          fwrite(&y1, sizeof(f64), 1, af);
+          fwrite(&distance, sizeof(f64), 1, af);
+        }
 
-      fprintf(f, "    {\"x0\":%.30f, \"y0\":%.30f, \"x1\":%.30f, \"y1\":%.30f}%s\n", 
-        x0, y0, x1, y1, i+1 == num_of_coords ? "" : ",");
+        {
+          PerfProfilerBlock("JSON Write");
+          fprintf(f, "    {\"x0\":%.30f, \"y0\":%.30f, \"x1\":%.30f, \"y1\":%.30f}%s\n", 
+            x0, y0, x1, y1, i+1 == num_of_coords ? "" : ",");
+        }
+      }
+      PerfProfilerBlockSetHitCount(num_of_coords);
     }
     fprintf(f, "]}\n");
 
@@ -58,5 +76,6 @@ int main(int argc, char **argv) {
     fclose(f);
   }
 
+  PerfProfilerFinalize();
   return 0;
 }
