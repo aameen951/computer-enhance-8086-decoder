@@ -105,25 +105,66 @@ void _PerfProfilerInitialize(){
     _perf_profiler_global_state.points[i].recursion_index = 0;
   }
 }
+struct _PerfProfilerTimeWithUnit {
+  f64 value;
+  const char *unit;
+};
+static _PerfProfilerTimeWithUnit _perf_profiler_to_time(f64 counter, u64 freq){
+  _PerfProfilerTimeWithUnit result = {};
+  result.value = (f64)counter / (f64)freq;
+  result.unit = "sc";
+  if(result.value > 1) {
+    if(result.value > 60) {
+      result.value /= 60;
+      result.unit = "mn";
+    }
+  } else {
+    if(result.value >= 0.001) {
+      result.value *= 1000.0;
+      result.unit = "ms";
+    } else if(result.value >= 0.000001) {
+      result.value *= 1000000.0;
+      result.unit = "us";
+    } else {
+      result.value *= 1000000000.0;
+      result.unit = "ns";
+    }
+  }
+  return result;
+}
+
+
 void _PerfProfilerFinalize(){
   _perf_profiler_block_end(&_perf_profiler_global_state.total);
+  auto c_freq = perf_compute_cpu_counter_frequency();
   auto total_time = _perf_profiler_global_state.points[_PERF_PROFILER_TOTAL_POINT_ID].inc_time;
-  printf("\n                     Perf Profiler Results:\n");
-  printf(  "                     ======================\n");
-  printf("%-30s  %11s   %6s      %11s   %6s      %11s  %14s  %14s\n", "Name", "Time Inc.", "%", "Time Exc.", "%", "Hits", "Per Hit Inc.", "Per Hit Exc.");
-  printf("===============================================================================================================================\n");
+  printf("\n Perf Profiler Results:\n\n");
+  printf("Name                           |             Time Inc.             |             Time Exc.             |     Hits    |        Per-Hit Inc.         |          Per-Hit Exc.       \n");
+  printf("=================================================================================================================================================================================\n");
 
   for(int i = 0; i < PerfProfilerGlobalState::MAX_POINTS; i++){
     auto point = _perf_profiler_global_state.points[i];
     if(point.name){
+      auto inc_rtime = _perf_profiler_to_time(point.inc_time, c_freq);
+      auto exc_rtime = _perf_profiler_to_time(point.exc_time, c_freq);
       auto inc_percent = (f64)point.inc_time / (f64)total_time * 100.0;
       auto exc_percent = (f64)point.exc_time / (f64)total_time * 100.0;
       auto per_hit_inc = point.hits ? (f64)point.inc_time / (f64)point.hits : 0;
       auto per_hit_exc = point.hits ? (f64)point.exc_time / (f64)point.hits : 0;
-      printf("%-30s  %11llu  %6.2f%%      %11llu  %6.2f%%      %11llu  %14.1f  %14.1f\n", point.name, point.inc_time, inc_percent, point.exc_time, exc_percent, point.hits, per_hit_inc, per_hit_exc);
+      auto per_hit_inc_rtime = _perf_profiler_to_time(per_hit_inc, c_freq);
+      auto per_hit_exc_rtime = _perf_profiler_to_time(per_hit_exc, c_freq);
+
+      printf("%-30s | %11llu cy %5.1f %-3s %6.2f %% | %11llu cy %5.1f %-3s %6.2f %% | %11llu | %14.1f cy %5.1f %-3s | %14.1f cy %5.1f %-3s\n", 
+        point.name, 
+        point.inc_time, inc_rtime.value, inc_rtime.unit, inc_percent, 
+        point.exc_time, inc_rtime.value, inc_rtime.unit, exc_percent, 
+        point.hits, 
+        per_hit_inc, per_hit_inc_rtime.value, per_hit_inc_rtime.unit,
+        per_hit_exc, per_hit_exc_rtime.value, per_hit_exc_rtime.unit
+      );
     }
   }
-  printf("===============================================================================================================================\n\n");
+  printf("=================================================================================================================================================================================\n\n");
 }
 #endif // PERF_PROFILER_IMPLEMENTATION
 
